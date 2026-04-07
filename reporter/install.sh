@@ -1,6 +1,10 @@
 #!/bin/bash
 # OpenClaw Reporter 설치 스크립트
+# Node.js 22+ 필요 (openclaw 자체 요구사항과 동일)
 # 사용법: curl -fsSL <URL>/install.sh | bash -s -- --token <TOKEN> --client-id <UUID>
+#
+# Gateway 토큰은 ~/.openclaw/openclaw.json에서 자동 감지됩니다.
+# WebSocket 이벤트 기반 모드로 동작하며, 실패 시 폴링 모드로 자동 전환됩니다.
 
 set -e
 
@@ -26,6 +30,8 @@ done
 if [ -z "$REPORTER_TOKEN" ] || [ -z "$CLIENT_ID" ]; then
   echo "오류: --token 과 --client-id 가 필요합니다."
   echo "사용법: curl -fsSL <URL>/install.sh | bash -s -- --token <TOKEN> --client-id <UUID>"
+  echo "  옵션: --gateway-port <PORT>   (기본값: 18789)"
+  echo "        --gateway-token <TOKEN>  (기본값: ~/.openclaw/openclaw.json 자동 감지)"
   exit 1
 fi
 
@@ -71,6 +77,9 @@ cat > "$INSTALL_DIR/config.json" <<EOF
   "command_poll_interval_ms": 30000
 }
 EOF
+# 참고: gateway_token이 null이면 ~/.openclaw/openclaw.json에서 자동 감지
+# WebSocket 연결 성공 시 이벤트 기반 모드로 동작, 실패 시 폴링 모드 사용
+# health_check_interval_ms / full_scan_interval_ms 는 폴링 fallback 설정값
 echo "  → $INSTALL_DIR/config.json"
 
 # ── 서비스 등록 ────────────────────────────────────────
@@ -105,6 +114,9 @@ EOF
   echo ""
   echo "  상태 확인: sudo systemctl status openclaw-reporter"
   echo "  로그 확인: sudo journalctl -u openclaw-reporter -f"
+  echo ""
+  echo "  동작 모드: ~/.openclaw/openclaw.json 감지 시 WebSocket 이벤트 기반"
+  echo "             미감지 시 폴링 모드 (헬스체크 30s, 풀스캔 5min)"
 
 elif [ "$OS" = "Darwin" ]; then
   # ── launchd (macOS) ──
@@ -154,6 +166,9 @@ EOF
   echo ""
   echo "  상태 확인: launchctl list | grep openclaw"
   echo "  로그 확인: tail -f $INSTALL_DIR/reporter.log"
+  echo ""
+  echo "  동작 모드: ~/.openclaw/openclaw.json 감지 시 WebSocket 이벤트 기반"
+  echo "             미감지 시 폴링 모드 (헬스체크 30s, 풀스캔 5min)"
 
 else
   # ── fallback: shell 래퍼 ──
@@ -196,5 +211,8 @@ openclaw() {
   echo "  적용: source $RC_FILE"
   echo "  실행: openclaw start  (reporter 자동 시작)"
   echo "  로그: tail -f $INSTALL_DIR/reporter.log"
+  echo ""
+  echo "  동작 모드: ~/.openclaw/openclaw.json 감지 시 WebSocket 이벤트 기반"
+  echo "             미감지 시 폴링 모드 (헬스체크 30s, 풀스캔 5min)"
 fi
 echo ""
