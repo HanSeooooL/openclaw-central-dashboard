@@ -419,6 +419,7 @@ let lastFullScanAt = 0;
 let wsMode = false;        // WebSocket 모드 활성 여부
 let wsReconnectTimer = null;
 let scanDebounceTimer = null;
+let wsLastHealthOk = null; // health 이벤트 상태 추적 (변경 시에만 스캔)
 
 const WS_RECONNECT_MS = 15_000;
 const WS_SCAN_DEBOUNCE_MS = 3_000;   // 이벤트 몰릴 때 3초 디바운스
@@ -498,9 +499,10 @@ async function connectGatewayWebSocket() {
           method: "connect",
           params: {
             client: {
-              id: `reporter-${client_id.slice(0, 8)}`,
-              mode: "cli",
+              id: "cli",
+              mode: "backend",
               version: "1.0.0",
+              platform: process.platform,
             },
             minProtocol: 3,
             maxProtocol: 3,
@@ -551,8 +553,15 @@ async function connectGatewayWebSocket() {
       if (evtName === "sessions.changed") {
         triggerScanDebounced("sessions.changed");
       } else if (evtName === "health") {
-        // health 이벤트 = 게이트웨이 상태 변경 → 즉시 스캔
-        triggerScanDebounced("health");
+        // health 이벤트: ok 필드가 변할 때만 스캔 (60초마다 브로드캐스트되므로 매번 스캔하지 않음)
+        const nowOk = Boolean(msg.payload?.ok);
+        if (wsLastHealthOk !== null && nowOk !== wsLastHealthOk) {
+          console.log(`[Reporter] health 상태 변화: ${wsLastHealthOk ? "ok → degraded" : "degraded → ok"} → 스냅샷 수집`);
+          wsLastHealthOk = nowOk;
+          triggerScanDebounced("health.changed");
+        } else {
+          wsLastHealthOk = nowOk;
+        }
       }
       // tick 이벤트는 30초마다 오지만 heartbeat 역할은 별도 타이머로 처리
     });
