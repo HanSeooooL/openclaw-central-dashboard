@@ -13,7 +13,9 @@ interface ClientCardProps {
 export default function ClientCard({ client, latestSnapshot, unreadAlerts = 0 }: ClientCardProps) {
   const online = latestSnapshot?.gateway_online ?? null;
   const lastSeenMs = latestSnapshot ? new Date(latestSnapshot.ts).getTime() : null;
-  const stale = lastSeenMs && Date.now() - lastSeenMs > 420_000;
+  // WS 모드 안전망 heartbeat = 10분, 폴링 fallback = 5분
+  // 둘 다 커버하는 여유 임계값: 15분
+  const stale = lastSeenMs && Date.now() - lastSeenMs > 900_000;
 
   const statusDot =
     online === null ? "bg-[#c1c1c1]" :
