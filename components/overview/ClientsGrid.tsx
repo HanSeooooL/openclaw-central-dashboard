@@ -39,9 +39,9 @@ export default function ClientsGrid({ initialClients }: ClientsGridProps) {
   const disconnectedCount = displayClients.filter((c) => !c.latestSnapshot).length;
 
   return (
-    <div className="p-8 space-y-8 max-w-7xl mx-auto">
+    <div className="p-4 md:p-8 space-y-6 md:space-y-8 max-w-7xl mx-auto">
       {/* 헤더 */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xl">🦞</span>
@@ -49,7 +49,7 @@ export default function ClientsGrid({ initialClients }: ClientsGridProps) {
           </div>
           <p className="text-sm text-secondary">등록된 OpenClaw 인스턴스 관제</p>
         </div>
-        <div className="flex items-center gap-3 text-xs font-medium">
+        <div className="flex items-center gap-2 md:gap-3 text-xs font-medium flex-wrap">
           <button
             onClick={() => setShowAddModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rausch text-white hover:bg-[#e0314f] active:scale-[0.98] transition-all font-semibold"

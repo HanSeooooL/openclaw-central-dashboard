@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAlertStore } from "@/stores/alertStore";
@@ -29,12 +30,17 @@ interface ClientSidebarProps {
 export default function ClientSidebar({ clientId, clientName }: ClientSidebarProps) {
   const pathname = usePathname();
   const unreadCount = useAlertStore((s) => s.alerts.filter((a) => a.client_id === clientId && !a.read).length);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  return (
-    <div className="w-56 bg-white border-r border-border-light flex flex-col h-full">
+  const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => (
+    <>
       {/* 로고 영역 */}
       <div className="p-4 border-b border-border-light">
-        <Link href="/clients" className="flex items-center gap-1.5 text-secondary hover:text-nearblack transition-colors mb-3 text-xs font-medium">
+        <Link
+          href="/clients"
+          onClick={onNavigate}
+          className="flex items-center gap-1.5 text-secondary hover:text-nearblack transition-colors mb-3 text-xs font-medium"
+        >
           <span>←</span>
           <span>전체 목록</span>
         </Link>
@@ -58,6 +64,7 @@ export default function ClientSidebar({ clientId, clientName }: ClientSidebarPro
             <Link
               key={item.path}
               href={href}
+              onClick={onNavigate}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all font-medium ${
                 isActive
                   ? "bg-[#ff385c]/8 text-rausch"
@@ -88,6 +95,62 @@ export default function ClientSidebar({ clientId, clientName }: ClientSidebarPro
           </button>
         </form>
       </div>
-    </div>
+    </>
+  );
+
+  return (
+    <>
+      {/* ── 데스크톱 사이드바 ── */}
+      <div className="hidden md:flex w-56 bg-white border-r border-border-light flex-col h-full flex-shrink-0">
+        <SidebarContent />
+      </div>
+
+      {/* ── 모바일 상단 바 ── */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-border-light h-14 px-4 flex items-center justify-between">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link href="/clients" className="p-1.5 text-secondary hover:text-nearblack flex-shrink-0">
+            <span className="text-sm">←</span>
+          </Link>
+          <span className="text-base flex-shrink-0">🦞</span>
+          <span className="text-sm font-bold text-nearblack truncate">{clientName}</span>
+        </div>
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="flex-shrink-0 p-2 rounded-lg hover:bg-surface text-secondary hover:text-nearblack transition-all"
+          aria-label="메뉴 열기"
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      {/* ── 모바일 드로어 ── */}
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          {/* 배경 오버레이 */}
+          <div
+            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+            onClick={() => setMobileOpen(false)}
+          />
+          {/* 드로어 */}
+          <div className="relative w-64 bg-white h-full flex flex-col shadow-xl">
+            <div className="flex items-center justify-between px-4 h-14 border-b border-border-light flex-shrink-0">
+              <span className="text-sm font-bold text-nearblack">메뉴</span>
+              <button
+                onClick={() => setMobileOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-surface text-secondary hover:text-nearblack transition-all"
+                aria-label="메뉴 닫기"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M2 2l12 12M14 2L2 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </div>
+            <SidebarContent onNavigate={() => setMobileOpen(false)} />
+          </div>
+        </div>
+      )}
+    </>
   );
 }

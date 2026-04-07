@@ -76,7 +76,7 @@ function TrendCharts({ clientId, allSnapshots }: TrendChartsProps) {
           <p className="text-[10px] text-[#c1c1c1]">30초마다 스냅샷이 쌓입니다</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           {[
             { key: "tokens", label: "토큰 사용량 (k)", color: "#ff385c", unit: "k" },
             { key: "cost", label: "추정 비용 (¢)", color: "#c8a000", unit: "¢" },
@@ -154,7 +154,7 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
   const daySnapshots = snapshots.filter((s) => now - new Date(s.ts).getTime() <= 24 * 3600 * 1000);
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl mx-auto">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6 max-w-6xl mx-auto">
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
@@ -194,7 +194,7 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
       )}
 
       {/* 요약 카드 */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatusCard
           title="게이트웨이"
           value={status.gateway_online ? "정상" : "오프라인"}
@@ -221,7 +221,7 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
       {/* 토큰 요약 */}
       <div className="bg-white shadow-card rounded-card p-5">
         <h3 className="text-sm font-semibold text-nearblack mb-4">토큰 사용량 요약</h3>
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
           <div>
             <p className="text-xs text-secondary mb-1 font-medium">최근 세션 합산</p>
             <p className="text-2xl font-bold text-nearblack" style={{ letterSpacing: "-0.44px" }}>{(totalTokens / 1000).toFixed(0)}k</p>
@@ -247,7 +247,7 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         {/* 시스템 리소스 */}
         <div className="bg-white shadow-card rounded-card p-5">
           <h3 className="text-sm font-semibold text-nearblack mb-4">시스템 리소스</h3>

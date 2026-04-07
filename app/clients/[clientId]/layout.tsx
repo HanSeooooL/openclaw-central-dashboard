@@ -32,7 +32,7 @@ export default async function ClientLayout({ children, params }: ClientLayoutPro
       <NavigationProgress />
       <ClientRealtimeProvider clientId={params.clientId} />
       <ClientSidebar clientId={params.clientId} clientName={client.name} />
-      <main className="flex-1 overflow-auto bg-[#f7f7f7]">{children}</main>
+      <main className="flex-1 overflow-auto bg-[#f7f7f7] pt-14 md:pt-0">{children}</main>
     </div>
   );
 }
