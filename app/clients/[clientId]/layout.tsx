@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import ClientSidebar from "@/components/client/ClientSidebar";
+import ClientRealtimeProvider from "@/components/client/ClientRealtimeProvider";
 import { createServiceClient } from "@/lib/supabase";
 
 interface ClientLayoutProps {
@@ -27,6 +28,7 @@ export default async function ClientLayout({ children, params }: ClientLayoutPro
 
   return (
     <div className="flex h-screen bg-white text-nearblack">
+      <ClientRealtimeProvider clientId={params.clientId} />
       <ClientSidebar clientId={params.clientId} clientName={client.name} />
       <main className="flex-1 overflow-auto bg-[#f7f7f7]">{children}</main>
     </div>

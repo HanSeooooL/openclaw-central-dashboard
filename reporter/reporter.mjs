@@ -92,11 +92,89 @@ function estimateTotalCost(sessions) {
     if (!s.total_tokens || !s.model) continue;
     const pricing = findPricing(s.model);
     if (!pricing) continue;
-    const input = s.total_tokens * 0.7;
-    const output = s.total_tokens * 0.3;
+    const input = (s.inputTokens ?? s.total_tokens * 0.7);
+    const output = (s.outputTokens ?? s.total_tokens * 0.3);
     total += (input * pricing.inputPer1M + output * pricing.outputPer1M) / 1_000_000;
   }
   return total;
+}
+
+// ─────────────────────────────────────────
+// raw JSON → FullStatus 정규화
+// ─────────────────────────────────────────
+
+function formatAge(ms) {
+  if (ms < 60000) return `${Math.round(ms / 1000)}초`;
+  if (ms < 3600000) return `${Math.round(ms / 60000)}분`;
+  if (ms < 86400000) return `${Math.round(ms / 3600000)}시간`;
+  return `${Math.round(ms / 86400000)}일`;
+}
+
+function normalizeStatus(raw) {
+  const recentSessions = Array.isArray(raw.sessions?.recent) ? raw.sessions.recent : [];
+
+  return {
+    // 런타임
+    runtime_version: raw.runtimeVersion ?? "unknown",
+    os_label: raw.os?.label ?? null,
+
+    // 게이트웨이
+    gateway_online: raw.gateway?.reachable ?? false,
+    gateway_latency_ms: raw.gateway?.connectLatencyMs ?? null,
+    gateway_url: raw.gateway?.url ?? null,
+    gateway_host: raw.gateway?.self?.host ?? null,
+    gateway_ip: raw.gateway?.self?.ip ?? null,
+    gateway_platform: raw.gateway?.self?.platform ?? null,
+    gateway_uptime: raw.gatewayService?.runtimeShort ?? null,
+    gateway_service_running: raw.gatewayService?.loaded ?? false,
+    gateway_pid: null,
+
+    // 세션
+    session_count: raw.sessions?.count ?? 0,
+    default_model: raw.sessions?.defaults?.model ?? null,
+    default_context_tokens: raw.sessions?.defaults?.contextTokens ?? 0,
+    sessions: recentSessions.map((s) => ({
+      session_id: s.sessionId,
+      key: s.key,
+      agent_id: s.agentId,
+      kind: s.kind,
+      model: s.model,
+      total_tokens: s.totalTokens ?? 0,
+      percent_used: s.percentUsed ?? 0,
+      age_ms: s.age ?? 0,
+      age_display: formatAge(s.age ?? 0),
+    })),
+
+    // 태스크
+    tasks: {
+      total: raw.tasks?.total ?? 0,
+      running: raw.tasks?.active ?? 0,
+      succeeded: raw.tasks?.byStatus?.succeeded ?? 0,
+      failed: raw.tasks?.failures ?? 0,
+    },
+
+    // 에이전트
+    agents: (raw.agents?.agents ?? []).map((a) => ({
+      id: a.id,
+      is_default: a.id === raw.agents?.defaultId,
+      sessions_count: a.sessionsCount ?? 0,
+    })),
+
+    // 채널 (channelSummary는 텍스트만 있어 상태 파악 불가 → 빈 배열)
+    channels: [],
+
+    // 하트비트
+    heartbeat_agents: (raw.heartbeat?.agents ?? []).map((h) => ({
+      agent_id: h.agentId,
+      enabled: h.enabled,
+      interval: h.every ?? null,
+    })),
+
+    // 메모리 플러그인
+    memory_plugin_enabled: raw.memoryPlugin?.enabled ?? false,
+    memory_plugin_slot: raw.memoryPlugin?.slot ?? null,
+    memory_files_count: 0,
+  };
 }
 
 // ─────────────────────────────────────────
@@ -191,7 +269,7 @@ async function collectAndReport() {
 
   try {
     const raw = await runOpenClaw("status --json");
-    fullStatus = JSON.parse(raw);
+    fullStatus = normalizeStatus(JSON.parse(raw));
   } catch (e) {
     console.warn(`[Reporter] openclaw status 실패: ${e}`);
     return;
@@ -203,7 +281,7 @@ async function collectAndReport() {
     console.warn(`[Reporter] 시스템 정보 수집 실패: ${e}`);
   }
 
-  const totalCostUsd = estimateTotalCost(fullStatus?.sessions ?? []);
+  const totalCostUsd = estimateTotalCost(fullStatus.sessions);
 
   try {
     const res = await fetch(INGEST_URL, {
@@ -220,6 +298,7 @@ async function collectAndReport() {
       console.warn(`[Reporter] ingest 실패 (${res.status}): ${text}`);
     } else {
       const data = await res.json();
+      console.log(`[Reporter] ✅ 스냅샷 전송 완료 (gateway: ${fullStatus.gateway_online ? "online" : "offline"}, sessions: ${fullStatus.session_count})`);
       if (data.alerts > 0) {
         console.log(`[Reporter] 알림 ${data.alerts}개 생성됨`);
       }

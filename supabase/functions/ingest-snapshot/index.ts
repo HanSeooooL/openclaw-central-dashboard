@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
 
     const clientId = client.id;
     const body = await req.json();
-    const { fullStatus, systemInfo } = body;
+    const { fullStatus, systemInfo, totalCostUsd = 0 } = body;
 
     if (!fullStatus) {
       return new Response(JSON.stringify({ error: "fullStatus required" }), { status: 400, headers: corsHeaders });
@@ -58,9 +58,9 @@ Deno.serve(async (req) => {
 
     const prevSnap = prevSnaps?.[0] ?? null;
 
-    // 세션 총 비용/토큰 계산
-    const sessions = fullStatus.sessions ?? [];
-    const totalTokens = sessions.reduce((s: number, sess: { total_tokens: number }) => s + sess.total_tokens, 0);
+    // 세션 총 토큰 계산
+    const sessions = Array.isArray(fullStatus.sessions) ? fullStatus.sessions : [];
+    const totalTokens = sessions.reduce((s: number, sess: { total_tokens: number }) => s + (sess.total_tokens ?? 0), 0);
 
     // snapshot INSERT
     const { error: insertError } = await supabase
@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
         gateway_latency_ms: fullStatus.gateway_latency_ms ?? null,
         session_count: fullStatus.session_count ?? 0,
         total_tokens: totalTokens,
-        total_cost_usd: 0, // Edge Function에서는 추정 불가, Reporter가 계산해서 보냄
+        total_cost_usd: totalCostUsd,
         tasks_running: fullStatus.tasks?.running ?? 0,
         tasks_failed: fullStatus.tasks?.failed ?? 0,
         full_status: fullStatus,

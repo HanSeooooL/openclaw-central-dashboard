@@ -14,7 +14,7 @@ export async function GET(
 
     let query = supabase
       .from("snapshots")
-      .select("id, client_id, ts, gateway_online, gateway_latency_ms, session_count, total_tokens, total_cost_usd, tasks_running, tasks_failed")
+      .select("id, client_id, ts, gateway_online, gateway_latency_ms, session_count, total_tokens, total_cost_usd, tasks_running, tasks_failed, full_status, system_info")
       .eq("client_id", params.clientId)
       .order("ts", { ascending: true });
 

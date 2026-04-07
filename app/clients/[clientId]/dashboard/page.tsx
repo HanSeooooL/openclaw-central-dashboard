@@ -3,8 +3,6 @@
 import { useState, useEffect } from "react";
 import ClientDashboard from "@/components/client/ClientDashboard";
 import { useClientStore } from "@/stores/clientStore";
-import { subscribeToClient } from "@/lib/realtime";
-import { useAlertStore } from "@/stores/alertStore";
 import type { FullStatus, SystemInfo, Snapshot } from "@/lib/types";
 
 // 빈 기본값
@@ -32,7 +30,6 @@ interface PageProps {
 export default function DashboardPage({ params }: PageProps) {
   const { clientId } = params;
   const { dataMap, setStatus, setSnapshots } = useClientStore();
-  const alertStore = useAlertStore();
   const data = dataMap[clientId];
 
   useEffect(() => {
@@ -53,10 +50,6 @@ export default function DashboardPage({ params }: PageProps) {
         }
       })
       .catch(() => {});
-
-    // Realtime 구독
-    const cleanup = subscribeToClient(clientId, { setStatus }, alertStore);
-    return cleanup;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
 
