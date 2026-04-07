@@ -1,34 +1,26 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
 
-// GET /api/clients — 전체 고객사 목록 + 최신 스냅샷
+// GET /api/clients — 전체 고객사 목록 + 최신 스냅샷 (LATERAL JOIN RPC)
 export async function GET() {
   try {
     const supabase = createServiceClient();
 
-    const { data: clients, error: clientsError } = await supabase
-      .from("clients")
-      .select("id, name, slug, created_at, notes")
-      .order("name");
+    const { data, error } = await supabase.rpc("get_clients_with_latest_snapshot");
+    if (error) throw error;
 
-    if (clientsError) throw clientsError;
-
-    // 각 고객사의 최신 스냅샷을 가져오기 (최신 1개)
-    const clientsWithSnapshot = await Promise.all(
-      (clients ?? []).map(async (client) => {
-        const { data: snaps } = await supabase
-          .from("snapshots")
-          .select("*")
-          .eq("client_id", client.id)
-          .order("ts", { ascending: false })
-          .limit(1);
-
-        return {
-          ...client,
-          latestSnapshot: snaps?.[0] ?? null,
-        };
-      })
-    );
+    const clientsWithSnapshot = (data ?? []).map((row: {
+      id: string; name: string; slug: string;
+      created_at: string; notes: string | null;
+      latest_snapshot: Record<string, unknown> | null;
+    }) => ({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      created_at: row.created_at,
+      notes: row.notes,
+      latestSnapshot: row.latest_snapshot ?? null,
+    }));
 
     return NextResponse.json({ clients: clientsWithSnapshot });
   } catch (e) {

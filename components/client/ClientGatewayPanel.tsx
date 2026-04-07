@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { FullStatus, GatewayCommand, PendingCommand } from "@/lib/types";
 
 interface ClientGatewayPanelProps {
@@ -13,12 +13,18 @@ type CommandStatus = { id: number; command: GatewayCommand; status: PendingComma
 export default function ClientGatewayPanel({ clientId, status }: ClientGatewayPanelProps) {
   const [busy, setBusy] = useState(false);
   const [activeCommand, setActiveCommand] = useState<CommandStatus>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, []);
 
   const pollCommand = useCallback(async (commandId: number) => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
     const maxAttempts = 30;
     let attempts = 0;
 
-    const interval = setInterval(async () => {
+    intervalRef.current = setInterval(async () => {
       attempts++;
       try {
         const res = await fetch(`/api/clients/${clientId}/commands?id=${commandId}`);
@@ -27,11 +33,13 @@ export default function ClientGatewayPanel({ clientId, status }: ClientGatewayPa
         setActiveCommand({ id: cmd.id, command: cmd.command, status: cmd.status, result: cmd.result });
 
         if (cmd.status === "done" || cmd.status === "error" || attempts >= maxAttempts) {
-          clearInterval(interval);
+          clearInterval(intervalRef.current!);
+          intervalRef.current = null;
           setBusy(false);
         }
       } catch {
-        clearInterval(interval);
+        clearInterval(intervalRef.current!);
+        intervalRef.current = null;
         setBusy(false);
       }
     }, 3000);

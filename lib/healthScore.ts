@@ -1,17 +1,6 @@
-import type { FullStatus, SystemInfo, ChannelStatus } from "./types";
+import type { FullStatus, SystemInfo, ChannelStatus, Snapshot } from "./types";
 
 export type Level = "good" | "warning" | "critical";
-
-export interface Snapshot {
-  ts: string | number;
-  total_tokens: number;
-  total_cost_usd: number;
-  session_count: number;
-  gateway_online: boolean;
-  gateway_latency_ms: number | null;
-  tasks_running: number;
-  tasks_failed: number;
-}
 
 export interface ServerStatus {
   grade: Level;

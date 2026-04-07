@@ -7,11 +7,19 @@ interface AddClientModalProps {
   onAdded: (client: { id: string; name: string; slug: string }) => void;
 }
 
-function generateToken(length = 32) {
+function generateToken(length = 48) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from(crypto.getRandomValues(new Uint8Array(length)))
-    .map((b) => chars[b % chars.length])
-    .join("");
+  const limit = Math.floor(256 / chars.length) * chars.length; // 248 → modulo bias 제거
+  const result: string[] = [];
+  while (result.length < length) {
+    const bytes = crypto.getRandomValues(new Uint8Array(length * 2));
+    for (const b of bytes) {
+      if (b < limit && result.length < length) {
+        result.push(chars[b % chars.length]);
+      }
+    }
+  }
+  return result.join("");
 }
 
 const INSTALL_SCRIPT_BASE =
