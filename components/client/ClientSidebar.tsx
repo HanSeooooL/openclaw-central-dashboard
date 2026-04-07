@@ -22,6 +22,12 @@ const NAV_ITEMS: NavItem[] = [
   { label: "모델", icon: "🤖", path: "models" },
 ];
 
+// 하단 탭에 고정 노출 (4개 + 더보기)
+const PRIMARY_TAB_PATHS = ["dashboard", "sessions", "costs", "alerts"];
+const PRIMARY_TABS = NAV_ITEMS.filter((i) => PRIMARY_TAB_PATHS.includes(i.path));
+// 더보기 드로어에만 표시
+const SECONDARY_ITEMS = NAV_ITEMS.filter((i) => !PRIMARY_TAB_PATHS.includes(i.path));
+
 interface ClientSidebarProps {
   clientId: string;
   clientName: string;
@@ -30,7 +36,7 @@ interface ClientSidebarProps {
 export default function ClientSidebar({ clientId, clientName }: ClientSidebarProps) {
   const pathname = usePathname();
   const unreadCount = useAlertStore((s) => s.alerts.filter((a) => a.client_id === clientId && !a.read).length);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => (
     <>
@@ -106,48 +112,109 @@ export default function ClientSidebar({ clientId, clientName }: ClientSidebarPro
       </div>
 
       {/* ── 모바일 상단 바 ── */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-border-light h-14 px-4 flex items-center justify-between">
-        <div className="flex items-center gap-2 min-w-0">
-          <Link href="/clients" className="p-1.5 text-secondary hover:text-nearblack flex-shrink-0">
-            <span className="text-sm">←</span>
-          </Link>
-          <span className="text-base flex-shrink-0">🦞</span>
-          <span className="text-sm font-bold text-nearblack truncate">{clientName}</span>
-        </div>
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-border-light h-14 px-4 flex items-center gap-2">
+        <Link href="/clients" className="p-1.5 text-secondary hover:text-nearblack flex-shrink-0">
+          <span className="text-sm">←</span>
+        </Link>
+        <span className="text-base flex-shrink-0">🦞</span>
+        <span className="text-sm font-bold text-nearblack truncate">{clientName}</span>
+      </div>
+
+      {/* ── 모바일 하단 탭 바 ── */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-border-light flex items-stretch">
+        {PRIMARY_TABS.map((item) => {
+          const href = `/clients/${clientId}/${item.path}`;
+          const isActive = pathname === href || pathname.startsWith(href + "/");
+          const showBadge = item.path === "alerts" && unreadCount > 0;
+
+          return (
+            <Link
+              key={item.path}
+              href={href}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors relative ${
+                isActive ? "text-rausch" : "text-secondary"
+              }`}
+            >
+              <span className="text-lg leading-none">{item.icon}</span>
+              <span>{item.label}</span>
+              {showBadge && (
+                <span className="absolute top-1.5 right-1/4 bg-rausch text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </Link>
+          );
+        })}
+
+        {/* 더보기 탭 */}
         <button
-          onClick={() => setMobileOpen(true)}
-          className="flex-shrink-0 p-2 rounded-lg hover:bg-surface text-secondary hover:text-nearblack transition-all"
-          aria-label="메뉴 열기"
+          onClick={() => setMoreOpen(true)}
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors ${
+            moreOpen ? "text-rausch" : "text-secondary"
+          }`}
         >
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-            <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
+          <span className="text-lg leading-none">···</span>
+          <span>더보기</span>
         </button>
       </div>
 
-      {/* ── 모바일 드로어 ── */}
-      {mobileOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
+      {/* ── 모바일 더보기 드로어 ── */}
+      {moreOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex items-end">
           {/* 배경 오버레이 */}
           <div
             className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-            onClick={() => setMobileOpen(false)}
+            onClick={() => setMoreOpen(false)}
           />
-          {/* 드로어 */}
-          <div className="relative w-64 bg-white h-full flex flex-col shadow-xl">
-            <div className="flex items-center justify-between px-4 h-14 border-b border-border-light flex-shrink-0">
-              <span className="text-sm font-bold text-nearblack">메뉴</span>
-              <button
-                onClick={() => setMobileOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-surface text-secondary hover:text-nearblack transition-all"
-                aria-label="메뉴 닫기"
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M2 2l12 12M14 2L2 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-              </button>
+          {/* 바텀 시트 */}
+          <div className="relative w-full bg-white rounded-t-2xl shadow-xl flex flex-col">
+            {/* 핸들 */}
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 bg-border-light rounded-full" />
             </div>
-            <SidebarContent onNavigate={() => setMobileOpen(false)} />
+            <div className="px-4 pb-2 pt-1">
+              <p className="text-xs font-semibold text-secondary">더보기</p>
+            </div>
+            <nav className="px-3 pb-2 space-y-0.5">
+              {SECONDARY_ITEMS.map((item) => {
+                const href = `/clients/${clientId}/${item.path}`;
+                const isActive = pathname === href || pathname.startsWith(href + "/");
+                return (
+                  <Link
+                    key={item.path}
+                    href={href}
+                    onClick={() => setMoreOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm transition-all font-medium ${
+                      isActive
+                        ? "bg-[#ff385c]/8 text-rausch"
+                        : "text-secondary hover:text-nearblack hover:bg-surface"
+                    }`}
+                  >
+                    <span className="text-base flex-shrink-0">{item.icon}</span>
+                    <span className="flex-1">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+            <div className="px-3 pb-4 border-t border-border-light mt-1 pt-3">
+              <Link
+                href="/clients"
+                onClick={() => setMoreOpen(false)}
+                className="flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-secondary hover:text-nearblack hover:bg-surface transition-all"
+              >
+                <span className="text-base flex-shrink-0">←</span>
+                <span>전체 목록</span>
+              </Link>
+              <form action={signOut}>
+                <button
+                  type="submit"
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-secondary hover:text-rausch hover:bg-[#ff385c]/8 transition-all"
+                >
+                  <span className="text-base flex-shrink-0">🚪</span>
+                  <span>로그아웃</span>
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       )}

@@ -71,7 +71,7 @@ export default function ClientCostAnalysis({ status, snapshots, loading }: Clien
   const tooltipStyle = { backgroundColor: "#ffffff", border: "1px solid #e8e8e8", borderRadius: 12, fontSize: 11, boxShadow: "rgba(0,0,0,0.04) 0px 2px 6px, rgba(0,0,0,0.1) 0px 4px 8px" };
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl mx-auto">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6 max-w-6xl mx-auto">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-[22px] font-semibold text-nearblack" style={{ letterSpacing: "-0.44px" }}>비용 분석</h2>
@@ -79,10 +79,10 @@ export default function ClientCostAnalysis({ status, snapshots, loading }: Clien
             {hours === 0 ? `최근 로드된 세션 ${sessions.length}개` : `최근 ${periodLabel} 내 세션: ${filteredSessions.length}개 / 로드된 ${sessions.length}개`}
           </p>
         </div>
-        <div className="flex bg-surface rounded-lg p-1 gap-0.5 flex-shrink-0">
+        <div className="flex bg-surface rounded-lg p-1 gap-0.5 overflow-x-auto flex-shrink-0">
           {PERIODS.map((p, i) => (
             <button key={p.label} onClick={() => setPeriodIdx(i)}
-              className={`px-3 py-1.5 text-xs rounded-md font-medium transition-all ${i === periodIdx ? "bg-rausch text-white" : "text-secondary hover:text-nearblack"}`}>
+              className={`px-3 py-1.5 text-xs rounded-md font-medium transition-all flex-shrink-0 ${i === periodIdx ? "bg-rausch text-white" : "text-secondary hover:text-nearblack"}`}>
               {p.label}
             </button>
           ))}
@@ -90,8 +90,8 @@ export default function ClientCostAnalysis({ status, snapshots, loading }: Clien
       </div>
 
       {/* 요약 카드 */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white shadow-card rounded-card p-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        <div className="col-span-2 sm:col-span-1 bg-white shadow-card rounded-card p-5">
           <p className="text-xs text-secondary mb-1 font-medium">총 추정 비용</p>
           <p className="text-2xl font-bold text-amber-700" style={{ letterSpacing: "-0.44px" }}>{formatCost(liveTotalCost)}</p>
           {histTotal != null && hours > 0 && (
@@ -115,14 +115,14 @@ export default function ClientCostAnalysis({ status, snapshots, loading }: Clien
       {showHistChart && (
         <div className="bg-white shadow-card rounded-card p-5">
           <h3 className="text-sm font-semibold text-nearblack mb-4">{periodLabel} 비용 추세</h3>
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {[
               { key: "cost", label: "추정 비용 (¢)", color: "#c8a000", unit: "¢" },
               { key: "tokens", label: "토큰 사용량 (k)", color: "#ff385c", unit: "k" },
             ].map(({ key, label, color, unit }) => (
               <div key={key}>
                 <p className="text-[10px] text-secondary mb-2 font-medium">{label}</p>
-                <ResponsiveContainer width="100%" height={130}>
+                <ResponsiveContainer width="100%" height={120}>
                   <LineChart data={histChartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f2f2f2" />
                     <XAxis dataKey="time" tick={{ fontSize: 9, fill: "#6a6a6a" }} interval="preserveStartEnd" />
@@ -161,21 +161,46 @@ export default function ClientCostAnalysis({ status, snapshots, loading }: Clien
 
       {/* 모델별 요약 테이블 */}
       {modelSummary.length > 0 && (
-        <div className="bg-white shadow-card rounded-card overflow-hidden">
-          <div className="grid grid-cols-[1fr_80px_80px_80px] gap-3 px-5 py-3 border-b border-border-light text-xs font-semibold text-secondary">
-            <span>모델</span><span className="text-right">세션</span><span className="text-right">토큰</span><span className="text-right">비용</span>
+        <>
+          {/* 데스크톱 테이블 */}
+          <div className="hidden md:block bg-white shadow-card rounded-card overflow-hidden">
+            <div className="grid grid-cols-[1fr_80px_80px_80px] gap-3 px-5 py-3 border-b border-border-light text-xs font-semibold text-secondary">
+              <span>모델</span><span className="text-right">세션</span><span className="text-right">토큰</span><span className="text-right">비용</span>
+            </div>
+            <div className="divide-y divide-border-light">
+              {modelSummary.map((m) => (
+                <div key={m.model} className="grid grid-cols-[1fr_80px_80px_80px] gap-3 px-5 py-3 items-center hover:bg-surface transition-colors">
+                  <span className="text-sm text-nearblack font-mono truncate">{m.model}</span>
+                  <span className="text-xs text-secondary text-right font-medium">{m.sessionCount}</span>
+                  <span className="text-xs text-secondary text-right font-medium">{(m.totalTokens / 1000).toFixed(0)}k</span>
+                  <span className="text-sm text-amber-700 text-right font-semibold">{formatCost(m.estimatedCost)}</span>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="divide-y divide-border-light">
+          {/* 모바일 카드 */}
+          <div className="md:hidden space-y-2">
             {modelSummary.map((m) => (
-              <div key={m.model} className="grid grid-cols-[1fr_80px_80px_80px] gap-3 px-5 py-3 items-center hover:bg-surface transition-colors">
-                <span className="text-sm text-nearblack font-mono truncate">{m.model}</span>
-                <span className="text-xs text-secondary text-right font-medium">{m.sessionCount}</span>
-                <span className="text-xs text-secondary text-right font-medium">{(m.totalTokens / 1000).toFixed(0)}k</span>
-                <span className="text-sm text-amber-700 text-right font-semibold">{formatCost(m.estimatedCost)}</span>
+              <div key={m.model} className="bg-white shadow-card rounded-card px-4 py-3">
+                <p className="text-xs text-nearblack font-mono truncate mb-2">{m.model}</p>
+                <div className="flex items-center gap-4 text-xs">
+                  <div>
+                    <p className="text-[10px] text-secondary mb-0.5">세션</p>
+                    <p className="font-semibold text-nearblack">{m.sessionCount}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-secondary mb-0.5">토큰</p>
+                    <p className="font-semibold text-nearblack">{(m.totalTokens / 1000).toFixed(0)}k</p>
+                  </div>
+                  <div className="ml-auto">
+                    <p className="text-[10px] text-secondary mb-0.5 text-right">비용</p>
+                    <p className="font-semibold text-amber-700">{formatCost(m.estimatedCost)}</p>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
-        </div>
+        </>
       )}
     </div>
   );
