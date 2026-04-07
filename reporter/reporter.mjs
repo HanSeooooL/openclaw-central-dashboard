@@ -422,7 +422,7 @@ let scanDebounceTimer = null;
 let wsLastHealthOk = null; // health 이벤트 상태 추적 (변경 시에만 스캔)
 
 const WS_RECONNECT_MS = 15_000;
-const WS_SCAN_DEBOUNCE_MS = 3_000;   // 이벤트 몰릴 때 3초 디바운스
+const WS_SCAN_DEBOUNCE_MS = 30_000;  // 이벤트 폭주 방지: 30초 내 연속 이벤트는 하나로 병합
 const WS_HEARTBEAT_INTERVAL_MS = 600_000; // WS 모드에서도 10분마다 안전망 스캔
 
 let reqCounter = 1;
