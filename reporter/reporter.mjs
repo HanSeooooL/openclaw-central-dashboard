@@ -250,8 +250,16 @@ async function runOpenClaw(args) {
     return stdout;
   }
   const bin = findOpenClawBin();
-  const { stdout } = await execAsync(`${bin} ${args}`, { timeout: 15000 });
-  return stdout;
+  try {
+    const { stdout } = await execAsync(`${bin} ${args}`, { timeout: 15000 });
+    return stdout;
+  } catch (e) {
+    // non-zero 종료여도 stdout에 유효한 데이터가 있으면 활용
+    // (일부 CLI는 경고 발생 시 exit code 1을 반환하면서도 stdout에 정상 JSON을 씀)
+    if (e.stdout?.trim()) return e.stdout;
+    const detail = e.stderr?.trim() ? `\n  stderr: ${e.stderr.trim()}` : "";
+    throw new Error(`${e.message}${detail}`);
+  }
 }
 
 // ─────────────────────────────────────────
