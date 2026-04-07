@@ -72,7 +72,7 @@ export default function ClientHealthOverview({ status, systemInfo, monthSnapshot
   const ctxSub = ctx.total === 0 ? "—" : `전체 ${ctx.total}개 세션 중 80% 이상`;
 
   return (
-    <div className="grid grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
       <AbstractCard label="서버 상태" level={server.grade} main={server.title} sub={server.subtitle} pulse={server.grade === "good" && status.gateway_online} />
       <AbstractCard label="이번달 추정비용" level="good" main={costLabel} sub={costSub} />
       <AbstractCard label="최근 오류" level={errors.level} main={errorLabel} sub="최근 24h 기준" />
