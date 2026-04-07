@@ -3,7 +3,7 @@
  * OpenClaw Central Dashboard — Reporter Agent
  *
  * 고객사 서버에 설치하여 OpenClaw 상태를 중앙 서버로 전송합니다.
- * Node.js 18+ 필요 (fetch 내장)
+ * Node.js 22+ 필요 (openclaw 자체 요구사항과 동일)
  *
  * 실행: node reporter.mjs
  * 설정: ~/.openclaw-reporter/config.json
@@ -44,6 +44,7 @@ const {
   reporter_token,
   client_id,
   gateway_port = 18789,
+  gateway_token: _gateway_token_cfg = null, // reporter config에 명시적으로 설정한 경우
   health_check_interval_ms = 30000,
   full_scan_interval_ms = 300000,
   command_poll_interval_ms = 30000,
@@ -55,6 +56,48 @@ if (!supabase_url || !reporter_token || !client_id) {
   console.error("[Reporter] supabase_url, reporter_token, client_id 필수");
   process.exit(1);
 }
+
+// ── OpenClaw 설정에서 gateway token 자동 감지 ──
+function autoDetectGatewayToken() {
+  // 1) reporter config에 명시된 값 우선
+  if (_gateway_token_cfg) return _gateway_token_cfg;
+
+  // 2) 환경변수 (openclaw 자체도 이걸 사용)
+  if (process.env.OPENCLAW_GATEWAY_TOKEN) return process.env.OPENCLAW_GATEWAY_TOKEN;
+
+  // 3) openclaw config 파일에서 자동 읽기
+  //    기본 위치: ~/.openclaw/openclaw.json (또는 레거시 ~/.clawdbot/clawdbot.json)
+  //    OPENCLAW_STATE_DIR, OPENCLAW_CONFIG_PATH 환경변수 지원
+  const candidates = [];
+
+  const configPathOverride = process.env.OPENCLAW_CONFIG_PATH?.trim();
+  if (configPathOverride) {
+    candidates.push(configPathOverride);
+  } else {
+    const stateDirOverride = process.env.OPENCLAW_STATE_DIR?.trim();
+    const home = homedir();
+    if (stateDirOverride) {
+      candidates.push(join(stateDirOverride, "openclaw.json"));
+      candidates.push(join(stateDirOverride, "clawdbot.json"));
+    }
+    candidates.push(join(home, ".openclaw", "openclaw.json"));
+    candidates.push(join(home, ".clawdbot", "clawdbot.json"));
+  }
+
+  for (const p of candidates) {
+    try {
+      const cfg = JSON.parse(readFileSync(p, "utf-8"));
+      const token = cfg?.gateway?.auth?.token?.trim();
+      const password = cfg?.gateway?.auth?.password?.trim();
+      if (token) return token;
+      if (password) return password;
+    } catch {}
+  }
+
+  return null;
+}
+
+const gateway_token = autoDetectGatewayToken();
 
 const INGEST_URL = `${supabase_url}/functions/v1/ingest-snapshot`;
 const POLL_URL = `${supabase_url}/functions/v1/poll-commands`;
@@ -216,7 +259,6 @@ async function runOpenClaw(args) {
 // ─────────────────────────────────────────
 
 async function getSystemInfo() {
-  const cpuList = cpus();
   let cpuUsage = 0;
   try {
     // /proc/stat 사용 (Linux)
@@ -370,13 +412,182 @@ async function updateCommand(id, status, result) {
 }
 
 // ─────────────────────────────────────────
-// 2단계 헬스 체크 루프
+// WebSocket 이벤트 기반 게이트웨이 연결
+// ─────────────────────────────────────────
+
+let lastFullScanAt = 0;
+let wsMode = false;        // WebSocket 모드 활성 여부
+let wsReconnectTimer = null;
+let scanDebounceTimer = null;
+
+const WS_RECONNECT_MS = 15_000;
+const WS_SCAN_DEBOUNCE_MS = 3_000;   // 이벤트 몰릴 때 3초 디바운스
+const WS_HEARTBEAT_INTERVAL_MS = 600_000; // WS 모드에서도 10분마다 안전망 스캔
+
+let reqCounter = 1;
+function nextReqId() { return String(reqCounter++); }
+
+/** 이벤트 수신 시 디바운스된 스캔 트리거 */
+function triggerScanDebounced(reason) {
+  if (scanDebounceTimer) return; // 이미 예약됨
+  scanDebounceTimer = setTimeout(async () => {
+    scanDebounceTimer = null;
+    const now = Date.now();
+    if (now - lastFullScanAt < WS_SCAN_DEBOUNCE_MS) return; // 너무 빠른 연속 호출 방지
+    console.log(`[Reporter] 이벤트 트리거 (${reason}) → 스냅샷 수집`);
+    lastFullScanAt = now;
+    await collectAndReport();
+  }, WS_SCAN_DEBOUNCE_MS);
+}
+
+async function connectGatewayWebSocket() {
+  if (!gateway_token) return false;
+
+  const WS = globalThis.WebSocket;
+  if (!WS) {
+    console.log("[Reporter] WebSocket API 없음 (Node.js 22+ 필요) → 폴링 모드");
+    return false;
+  }
+
+  return new Promise((resolve) => {
+    const wsUrl = `ws://localhost:${gateway_port}`;
+    let ws;
+    let resolved = false;
+
+    function resolveOnce(success) {
+      if (!resolved) {
+        resolved = true;
+        resolve(success);
+      }
+    }
+
+    // 5초 안에 인증 안 되면 포기
+    const authTimeout = setTimeout(() => {
+      console.warn("[Reporter] WebSocket 인증 타임아웃 → 폴링 모드");
+      ws?.close();
+      resolveOnce(false);
+    }, 5000);
+
+    try {
+      ws = new WS(wsUrl);
+    } catch (e) {
+      clearTimeout(authTimeout);
+      console.warn(`[Reporter] WebSocket 생성 실패: ${e.message}`);
+      resolveOnce(false);
+      return;
+    }
+
+    ws.addEventListener("open", () => {
+      // 게이트웨이가 connect.challenge를 보낼 때까지 대기
+    });
+
+    ws.addEventListener("message", async (event) => {
+      let msg;
+      try {
+        msg = JSON.parse(typeof event.data === "string" ? event.data : event.data.toString());
+      } catch {
+        return;
+      }
+
+      // ── 핸드쉐이크 ──
+      if (msg.event === "connect.challenge") {
+        const reqId = nextReqId();
+        ws.send(JSON.stringify({
+          type: "req",
+          id: reqId,
+          method: "connect",
+          params: {
+            client: {
+              id: `reporter-${client_id.slice(0, 8)}`,
+              mode: "cli",
+              version: "1.0.0",
+            },
+            minProtocol: 3,
+            maxProtocol: 3,
+            role: "operator",
+            scopes: [],
+            auth: { token: gateway_token },
+          },
+        }));
+        return;
+      }
+
+      // ── 인증 응답 ──
+      if (msg.type === "res" && msg.ok === true && !wsMode) {
+        clearTimeout(authTimeout);
+        wsMode = true;
+        console.log("[Reporter] ✅ WebSocket 인증 성공 → 이벤트 기반 모드");
+        resolveOnce(true);
+
+        // 세션 이벤트 구독
+        ws.send(JSON.stringify({
+          type: "req",
+          id: nextReqId(),
+          method: "sessions.subscribe",
+          params: {},
+        }));
+
+        // 즉시 첫 스캔
+        lastFullScanAt = Date.now();
+        await collectAndReport();
+        return;
+      }
+
+      if (msg.type === "res" && msg.ok === false && !wsMode) {
+        clearTimeout(authTimeout);
+        const errMsg = msg.error?.message ?? "unknown error";
+        console.warn(`[Reporter] WebSocket 인증 실패: ${errMsg} → 폴링 모드`);
+        ws.close();
+        resolveOnce(false);
+        return;
+      }
+
+      // ── 런타임 이벤트 (인증 완료 후) ──
+      if (!wsMode) return;
+
+      const evtName = msg.event;
+      if (!evtName) return;
+
+      if (evtName === "sessions.changed") {
+        triggerScanDebounced("sessions.changed");
+      } else if (evtName === "health") {
+        // health 이벤트 = 게이트웨이 상태 변경 → 즉시 스캔
+        triggerScanDebounced("health");
+      }
+      // tick 이벤트는 30초마다 오지만 heartbeat 역할은 별도 타이머로 처리
+    });
+
+    ws.addEventListener("close", (event) => {
+      const wasMode = wsMode;
+      wsMode = false;
+      clearTimeout(authTimeout);
+      resolveOnce(false);
+
+      if (event.code !== 1000 && event.code !== 1001) {
+        console.log(`[Reporter] WebSocket 연결 끊어짐 (code: ${event.code}) → ${WS_RECONNECT_MS / 1000}초 후 재연결`);
+        wsReconnectTimer = setTimeout(async () => {
+          const ok = await connectGatewayWebSocket();
+          if (!ok && !wsMode) {
+            // 재연결 실패 → 폴링 모드로 복귀 (이미 폴링 루프가 돌고 있음)
+            console.log("[Reporter] WebSocket 재연결 실패 → 폴링 모드 유지");
+          }
+        }, WS_RECONNECT_MS);
+      }
+    });
+
+    ws.addEventListener("error", () => {
+      // close 이벤트가 이어서 호출됨
+    });
+  });
+}
+
+// ─────────────────────────────────────────
+// 2단계 헬스 체크 루프 (폴링 모드 전용)
 // ─────────────────────────────────────────
 
 const GATEWAY_HEALTH_URL = `http://localhost:${gateway_port}/health`;
 
 let lastHealthOk = null;   // null = 최초 미확인
-let lastFullScanAt = 0;
 
 async function checkGatewayHealth() {
   try {
@@ -391,6 +602,8 @@ async function checkGatewayHealth() {
 }
 
 async function healthLoop() {
+  if (wsMode) return; // WebSocket 모드면 폴링 불필요
+
   const healthOk = await checkGatewayHealth();
   const now = Date.now();
 
@@ -411,17 +624,49 @@ async function healthLoop() {
   }
 }
 
+// WS 모드에서도 10분마다 안전망 스캔 (이벤트 누락 방지)
+async function wsHeartbeatLoop() {
+  if (!wsMode) return;
+  const now = Date.now();
+  if (now - lastFullScanAt >= WS_HEARTBEAT_INTERVAL_MS) {
+    console.log("[Reporter] WS 안전망 heartbeat → 풀 스캔");
+    lastFullScanAt = now;
+    await collectAndReport();
+  }
+}
+
 // ─────────────────────────────────────────
-// 메인 루프
+// 메인
 // ─────────────────────────────────────────
 
 console.log(`[Reporter] 시작 — client_id: ${client_id}`);
-console.log(`[Reporter] 헬스 체크: ${health_check_interval_ms / 1000}s, 풀 스캔(heartbeat): ${full_scan_interval_ms / 1000}s, 명령 폴링: ${command_poll_interval_ms / 1000}s`);
 
-// 즉시 첫 풀 스캔
-collectAndReport();
-lastFullScanAt = Date.now();
+// WebSocket 모드 시도
+if (gateway_token) {
+  const tokenSrc = _gateway_token_cfg
+    ? "config"
+    : process.env.OPENCLAW_GATEWAY_TOKEN
+      ? "OPENCLAW_GATEWAY_TOKEN"
+      : "openclaw.json 자동 감지";
+  console.log(`[Reporter] WebSocket 모드 시도 (토큰 출처: ${tokenSrc})...`);
+  const wsOk = await connectGatewayWebSocket();
+  if (!wsOk) {
+    console.log(`[Reporter] 폴링 모드로 전환 (헬스체크: ${health_check_interval_ms / 1000}s, 풀스캔: ${full_scan_interval_ms / 1000}s)`);
+    await collectAndReport();
+    lastFullScanAt = Date.now();
+  } else {
+    console.log(`[Reporter] WebSocket 이벤트 기반 모드 활성 (안전망: ${WS_HEARTBEAT_INTERVAL_MS / 1000}s)`);
+  }
+} else {
+  console.log(`[Reporter] 폴링 모드 (헬스체크: ${health_check_interval_ms / 1000}s, 풀스캔: ${full_scan_interval_ms / 1000}s)`);
+  await collectAndReport();
+  lastFullScanAt = Date.now();
+}
+
+// 명령 폴링 즉시 시작
 pollAndExecuteCommands();
 
-setInterval(healthLoop, health_check_interval_ms);
-setInterval(pollAndExecuteCommands, command_poll_interval_ms);
+// 공통 타이머
+setInterval(healthLoop, health_check_interval_ms);              // 폴링 모드 헬스체크 (WS 모드엔 no-op)
+setInterval(wsHeartbeatLoop, WS_HEARTBEAT_INTERVAL_MS);         // WS 모드 안전망
+setInterval(pollAndExecuteCommands, command_poll_interval_ms);  // 명령 폴링 (항상)

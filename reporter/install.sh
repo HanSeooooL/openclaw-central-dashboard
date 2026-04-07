@@ -8,15 +8,17 @@ SUPABASE_URL="https://ytagjuslvkyhatsvppob.supabase.co"
 REPORTER_TOKEN=""
 CLIENT_ID=""
 GATEWAY_PORT=18789
+GATEWAY_TOKEN=""
 INSTALL_DIR="$HOME/.openclaw-reporter"
 REPORTER_URL="https://raw.githubusercontent.com/HanSeooooL/openclaw-central-dashboard/main/reporter/reporter.mjs"
 
 # ── 인자 파싱 ──────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --token)        REPORTER_TOKEN="$2"; shift 2 ;;
-    --client-id)    CLIENT_ID="$2";      shift 2 ;;
-    --gateway-port) GATEWAY_PORT="$2";   shift 2 ;;
+    --token)         REPORTER_TOKEN="$2"; shift 2 ;;
+    --client-id)     CLIENT_ID="$2";      shift 2 ;;
+    --gateway-port)  GATEWAY_PORT="$2";   shift 2 ;;
+    --gateway-token) GATEWAY_TOKEN="$2";  shift 2 ;;
     *) echo "알 수 없는 옵션: $1"; exit 1 ;;
   esac
 done
@@ -29,13 +31,13 @@ fi
 
 # ── 사전 조건 확인 ─────────────────────────────────────
 if ! command -v node &>/dev/null; then
-  echo "❌ Node.js 18+ 이 필요합니다. https://nodejs.org"
+  echo "❌ Node.js 22+ 이 필요합니다. https://nodejs.org"
   exit 1
 fi
 
 NODE_MAJOR=$(node -e "process.stdout.write(process.version.slice(1).split('.')[0])")
-if [ "$NODE_MAJOR" -lt 18 ]; then
-  echo "❌ Node.js 18+ 이 필요합니다. 현재: $(node -v)"
+if [ "$NODE_MAJOR" -lt 22 ]; then
+  echo "❌ Node.js 22+ 이 필요합니다. 현재: $(node -v)"
   exit 1
 fi
 
@@ -52,12 +54,18 @@ curl -fsSL "$REPORTER_URL" -o "$INSTALL_DIR/reporter.mjs"
 echo "  → $INSTALL_DIR/reporter.mjs"
 
 # ── config.json 생성 ──────────────────────────────────
+GATEWAY_TOKEN_JSON="null"
+if [ -n "$GATEWAY_TOKEN" ]; then
+  GATEWAY_TOKEN_JSON="\"$GATEWAY_TOKEN\""
+fi
+
 cat > "$INSTALL_DIR/config.json" <<EOF
 {
   "supabase_url": "$SUPABASE_URL",
   "reporter_token": "$REPORTER_TOKEN",
   "client_id": "$CLIENT_ID",
   "gateway_port": $GATEWAY_PORT,
+  "gateway_token": $GATEWAY_TOKEN_JSON,
   "health_check_interval_ms": 30000,
   "full_scan_interval_ms": 300000,
   "command_poll_interval_ms": 30000

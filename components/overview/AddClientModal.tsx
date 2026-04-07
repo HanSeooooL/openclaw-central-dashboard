@@ -213,7 +213,7 @@ export default function AddClientModal({ onClose, onAdded }: AddClientModalProps
                   {copied ? "복사됨 ✓" : "복사"}
                 </button>
               </div>
-              <p className="text-[11px] text-secondary">Node.js 18+ 필요 · 설치 후 OpenClaw가 자동으로 시작됩니다</p>
+              <p className="text-[11px] text-secondary">Node.js 22+ 필요 · OpenClaw 설치 서버에서 실행하세요 · Gateway 토큰은 자동으로 감지됩니다</p>
             </div>
 
             <div className="bg-surface rounded-xl p-3 space-y-1.5 text-xs text-secondary">
