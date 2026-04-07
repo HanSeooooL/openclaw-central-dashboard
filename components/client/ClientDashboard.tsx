@@ -188,8 +188,8 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
         <ClientHealthOverview
           status={status}
           systemInfo={systemInfo}
-          monthSnapshots={monthSnapshots as import("@/lib/healthScore").Snapshot[]}
-          daySnapshots={daySnapshots as import("@/lib/healthScore").Snapshot[]}
+          monthSnapshots={monthSnapshots as import("@/lib/types").Snapshot[]}
+          daySnapshots={daySnapshots as import("@/lib/types").Snapshot[]}
         />
       )}
 
