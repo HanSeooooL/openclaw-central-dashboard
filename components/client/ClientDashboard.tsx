@@ -73,7 +73,7 @@ function TrendCharts({ clientId, allSnapshots }: TrendChartsProps) {
         <div className="flex flex-col items-center justify-center h-40 text-secondary text-xs space-y-2">
           <span className="text-2xl">📊</span>
           <p>{label} 기간 내 데이터가 부족합니다</p>
-          <p className="text-[10px] text-[#c1c1c1]">30초마다 스냅샷이 쌓입니다</p>
+          <p className="text-[10px] text-[#c1c1c1]">세션 변화 시 스냅샷이 수집됩니다</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">

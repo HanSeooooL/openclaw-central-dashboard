@@ -72,7 +72,7 @@ export default function ClientGatewayPanel({ clientId, status }: ClientGatewayPa
   };
 
   const commandStatusMsg = activeCommand
-    ? activeCommand.status === "pending" ? `⏳ ${commandLabel[activeCommand.command]} 명령 대기 중 (Reporter 폴링 10초 간격)`
+    ? activeCommand.status === "pending" ? `⏳ ${commandLabel[activeCommand.command]} 명령 대기 중 (Reporter 명령 폴링 30초 간격)`
     : activeCommand.status === "ack" ? `⚙️ ${commandLabel[activeCommand.command]} 명령 실행 중...`
     : activeCommand.status === "done" ? `✅ ${commandLabel[activeCommand.command]} 완료${activeCommand.result ? `: ${activeCommand.result}` : ""}`
     : `❌ ${commandLabel[activeCommand.command]} 실패${activeCommand.result ? `: ${activeCommand.result}` : ""}`
@@ -122,7 +122,7 @@ export default function ClientGatewayPanel({ clientId, status }: ClientGatewayPa
       )}
 
       <p className="text-xs text-secondary bg-surface border border-border-light rounded-lg px-3 py-2">
-        💡 명령은 Reporter Agent가 10초 간격으로 폴링하여 실행합니다. 명령 발행 후 최대 10초 지연이 발생할 수 있습니다.
+        💡 명령은 Reporter Agent가 30초 간격으로 수신합니다. 명령 발행 후 최대 30초 지연이 발생할 수 있습니다.
       </p>
 
       {/* 게이트웨이 정보 */}
