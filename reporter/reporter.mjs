@@ -43,8 +43,10 @@ const {
   supabase_url,
   reporter_token,
   client_id,
-  report_interval_ms = 30000,
-  command_poll_interval_ms = 10000,
+  gateway_port = 18789,
+  health_check_interval_ms = 30000,
+  full_scan_interval_ms = 300000,
+  command_poll_interval_ms = 30000,
   openclaw_bin = null,
   openclaw_container = null,
 } = config;
@@ -368,15 +370,58 @@ async function updateCommand(id, status, result) {
 }
 
 // ─────────────────────────────────────────
+// 2단계 헬스 체크 루프
+// ─────────────────────────────────────────
+
+const GATEWAY_HEALTH_URL = `http://localhost:${gateway_port}/health`;
+
+let lastHealthOk = null;   // null = 최초 미확인
+let lastFullScanAt = 0;
+
+async function checkGatewayHealth() {
+  try {
+    const res = await fetch(GATEWAY_HEALTH_URL, {
+      signal: AbortSignal.timeout(3000),
+    });
+    const data = await res.json();
+    return data.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+async function healthLoop() {
+  const healthOk = await checkGatewayHealth();
+  const now = Date.now();
+
+  const healthChanged = lastHealthOk !== null && healthOk !== lastHealthOk;
+  const heartbeatDue = now - lastFullScanAt >= full_scan_interval_ms;
+
+  if (healthChanged || heartbeatDue) {
+    if (healthChanged) {
+      console.log(`[Reporter] 게이트웨이 상태 변경: ${lastHealthOk ? "online → offline" : "offline → online"} → 풀 스캔`);
+    } else {
+      console.log(`[Reporter] heartbeat → 풀 스캔`);
+    }
+    lastHealthOk = healthOk;
+    lastFullScanAt = now;
+    await collectAndReport();
+  } else {
+    lastHealthOk = healthOk;
+  }
+}
+
+// ─────────────────────────────────────────
 // 메인 루프
 // ─────────────────────────────────────────
 
 console.log(`[Reporter] 시작 — client_id: ${client_id}`);
-console.log(`[Reporter] 스냅샷 주기: ${report_interval_ms / 1000}s, 명령 폴링: ${command_poll_interval_ms / 1000}s`);
+console.log(`[Reporter] 헬스 체크: ${health_check_interval_ms / 1000}s, 풀 스캔(heartbeat): ${full_scan_interval_ms / 1000}s, 명령 폴링: ${command_poll_interval_ms / 1000}s`);
 
-// 즉시 첫 실행
+// 즉시 첫 풀 스캔
 collectAndReport();
+lastFullScanAt = Date.now();
 pollAndExecuteCommands();
 
-setInterval(collectAndReport, report_interval_ms);
+setInterval(healthLoop, health_check_interval_ms);
 setInterval(pollAndExecuteCommands, command_poll_interval_ms);

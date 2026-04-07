@@ -2,8 +2,10 @@
   "supabase_url": "https://YOUR_PROJECT_ID.supabase.co",
   "reporter_token": "발급된_토큰을_여기에_입력하세요",
   "client_id": "고객사_UUID",
-  "report_interval_ms": 30000,
-  "command_poll_interval_ms": 10000,
+  "gateway_port": 18789,
+  "health_check_interval_ms": 30000,
+  "full_scan_interval_ms": 300000,
+  "command_poll_interval_ms": 30000,
   "openclaw_bin": null,
   "openclaw_container": null
 }
