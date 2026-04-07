@@ -156,10 +156,14 @@ else
 openclaw() {
   command openclaw \"\$@\"
   if [ \"\$1\" = \"start\" ]; then
-    nohup node \"\$HOME/.openclaw-reporter/reporter.mjs\" \
-      >> \"\$HOME/.openclaw-reporter/reporter.log\" 2>&1 &
-    disown
-    echo \"[Reporter] 시작됨 (PID: \$!)\"
+    if pgrep -f \"reporter.mjs\" > /dev/null 2>&1; then
+      echo \"[Reporter] 이미 실행 중입니다\"
+    else
+      nohup node \"\$HOME/.openclaw-reporter/reporter.mjs\" \
+        >> \"\$HOME/.openclaw-reporter/reporter.log\" 2>&1 &
+      disown
+      echo \"[Reporter] 시작됨 (PID: \$!)\"
+    fi
   fi
 }
 # <<< openclaw-reporter auto-start >>>"
