@@ -17,6 +17,31 @@ export interface AlertStoreUpdater {
  * alerts INSERT → alertStore 업데이트
  * @returns cleanup 함수
  */
+export interface GridStoreUpdater {
+  updateClientSnapshot: (clientId: string, snapshot: Snapshot) => void;
+}
+
+export function subscribeToAllClients(
+  clientIds: string[],
+  store: GridStoreUpdater
+) {
+  const supabase = createBrowserClient();
+  const channel = supabase
+    .channel("snap-grid")
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "snapshots" },
+      (payload) => {
+        const row = payload.new as Snapshot;
+        if (clientIds.includes(row.client_id)) {
+          store.updateClientSnapshot(row.client_id, row);
+        }
+      }
+    )
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
+}
+
 export function subscribeToClient(
   clientId: string,
   clientStore: ClientStoreUpdater,

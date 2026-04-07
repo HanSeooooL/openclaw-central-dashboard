@@ -22,6 +22,7 @@ interface ClientStoreState {
   // Actions
   setClients: (clients: (Client & { latestSnapshot: Snapshot | null })[]) => void;
   setClientsLoading: (loading: boolean) => void;
+  updateClientSnapshot: (clientId: string, snapshot: Snapshot) => void;
   setStatus: (clientId: string, fullStatus: FullStatus, systemInfo: SystemInfo) => void;
   setSnapshots: (clientId: string, snapshots: Snapshot[]) => void;
   setLoading: (clientId: string, loading: boolean) => void;
@@ -42,6 +43,12 @@ export const useClientStore = create<ClientStoreState>((set) => ({
 
   setClients: (clients) => set({ clients, clientsLoading: false }),
   setClientsLoading: (loading) => set({ clientsLoading: loading }),
+  updateClientSnapshot: (clientId, snapshot) =>
+    set((state) => ({
+      clients: state.clients.map((c) =>
+        c.id === clientId ? { ...c, latestSnapshot: snapshot } : c
+      ),
+    })),
 
   setStatus: (clientId, fullStatus, systemInfo) =>
     set((state) => ({

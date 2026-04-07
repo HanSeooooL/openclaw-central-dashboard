@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import ClientCard from "./ClientCard";
 import { useClientStore } from "@/stores/clientStore";
 import { useAlertStore, getClientUnreadCount } from "@/stores/alertStore";
+import { subscribeToAllClients } from "@/lib/realtime";
 import type { Client, Snapshot } from "@/lib/types";
 
 interface ClientsGridProps {
@@ -11,12 +12,20 @@ interface ClientsGridProps {
 }
 
 export default function ClientsGrid({ initialClients }: ClientsGridProps) {
-  const { clients, setClients } = useClientStore();
+  const { clients, setClients, updateClientSnapshot } = useClientStore();
   const alertState = useAlertStore();
 
   useEffect(() => {
     setClients(initialClients);
   }, [initialClients, setClients]);
+
+  useEffect(() => {
+    const ids = initialClients.map((c) => c.id);
+    if (ids.length === 0) return;
+    const cleanup = subscribeToAllClients(ids, { updateClientSnapshot });
+    return cleanup;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const displayClients = clients.length > 0 ? clients : initialClients;
 
