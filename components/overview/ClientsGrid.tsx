@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import ClientCard from "./ClientCard";
+import AddClientModal from "./AddClientModal";
 import { useClientStore } from "@/stores/clientStore";
 import { useAlertStore, getClientUnreadCount } from "@/stores/alertStore";
 import { subscribeToAllClients } from "@/lib/realtime";
@@ -15,6 +16,7 @@ interface ClientsGridProps {
 export default function ClientsGrid({ initialClients }: ClientsGridProps) {
   const { clients, setClients, updateClientSnapshot } = useClientStore();
   const alertState = useAlertStore();
+  const [showAddModal, setShowAddModal] = useState(false);
 
   useEffect(() => {
     setClients(initialClients);
@@ -47,7 +49,14 @@ export default function ClientsGrid({ initialClients }: ClientsGridProps) {
           </div>
           <p className="text-sm text-secondary">등록된 OpenClaw 인스턴스 관제</p>
         </div>
-        <div className="flex items-center gap-4 text-xs font-medium">
+        <div className="flex items-center gap-3 text-xs font-medium">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rausch text-white hover:bg-[#e0314f] active:scale-[0.98] transition-all font-semibold"
+          >
+            <span>+</span>
+            <span>고객사 추가</span>
+          </button>
           <form action={signOut}>
             <button type="submit" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-secondary hover:text-rausch hover:bg-[#ff385c]/8 transition-all font-medium">
               <span>🚪</span>
@@ -74,7 +83,12 @@ export default function ClientsGrid({ initialClients }: ClientsGridProps) {
         <div className="flex flex-col items-center justify-center py-24 text-secondary space-y-3">
           <span className="text-4xl">🏢</span>
           <p className="text-sm font-medium">등록된 고객사가 없습니다</p>
-          <p className="text-xs text-[#c1c1c1]">API를 통해 고객사를 등록하고 Reporter를 설치하세요</p>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="text-xs text-rausch hover:underline font-medium"
+          >
+            + 첫 번째 고객사 추가하기
+          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
@@ -87,6 +101,17 @@ export default function ClientsGrid({ initialClients }: ClientsGridProps) {
             />
           ))}
         </div>
+      )}
+      {showAddModal && (
+        <AddClientModal
+          onClose={() => setShowAddModal(false)}
+          onAdded={(newClient) => {
+            setClients([
+              ...displayClients,
+              { ...newClient, created_at: new Date().toISOString(), notes: null, latestSnapshot: null },
+            ]);
+          }}
+        />
       )}
     </div>
   );
