@@ -5,6 +5,7 @@ import ClientCard from "./ClientCard";
 import { useClientStore } from "@/stores/clientStore";
 import { useAlertStore, getClientUnreadCount } from "@/stores/alertStore";
 import { subscribeToAllClients } from "@/lib/realtime";
+import { signOut } from "@/app/login/actions";
 import type { Client, Snapshot } from "@/lib/types";
 
 interface ClientsGridProps {
@@ -40,10 +41,19 @@ export default function ClientsGrid({ initialClients }: ClientsGridProps) {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-[28px] font-bold text-nearblack" style={{ lineHeight: 1.43 }}>전체 현황</h2>
-          <p className="text-sm text-secondary mt-1">등록된 OpenClaw 인스턴스 관제</p>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xl">🦞</span>
+            <h2 className="text-[28px] font-bold text-nearblack" style={{ lineHeight: 1.43 }}>전체 현황</h2>
+          </div>
+          <p className="text-sm text-secondary">등록된 OpenClaw 인스턴스 관제</p>
         </div>
         <div className="flex items-center gap-4 text-xs font-medium">
+          <form action={signOut}>
+            <button type="submit" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-secondary hover:text-rausch hover:bg-[#ff385c]/8 transition-all font-medium">
+              <span>🚪</span>
+              <span>로그아웃</span>
+            </button>
+          </form>
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             <span className="text-secondary">온라인 {onlineCount}</span>

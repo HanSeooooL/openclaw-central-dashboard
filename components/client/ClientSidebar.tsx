@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAlertStore } from "@/stores/alertStore";
+import { signOut } from "@/app/login/actions";
 
 interface NavItem {
   label: string;
@@ -47,7 +48,7 @@ export default function ClientSidebar({ clientId, clientName }: ClientSidebarPro
       </div>
 
       {/* 메인 네비게이션 */}
-      <nav className="flex-1 p-3 space-y-0.5">
+      <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
         {NAV_ITEMS.map((item) => {
           const href = `/clients/${clientId}/${item.path}`;
           const isActive = pathname === href || pathname.startsWith(href + "/");
@@ -74,6 +75,19 @@ export default function ClientSidebar({ clientId, clientName }: ClientSidebarPro
           );
         })}
       </nav>
+
+      {/* 하단 로그아웃 */}
+      <div className="p-3 border-t border-border-light">
+        <form action={signOut}>
+          <button
+            type="submit"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-secondary hover:text-rausch hover:bg-[#ff385c]/8 transition-all"
+          >
+            <span className="text-base flex-shrink-0">🚪</span>
+            <span>로그아웃</span>
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
