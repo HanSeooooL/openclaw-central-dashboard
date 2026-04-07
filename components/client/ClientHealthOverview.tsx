@@ -1,7 +1,6 @@
 "use client";
 
-import type { FullStatus, SystemInfo } from "@/lib/types";
-import type { Snapshot } from "@/lib/healthScore";
+import type { FullStatus, SystemInfo, Snapshot } from "@/lib/types";
 import {
   computeServerStatus,
   computeMonthlyCost,
