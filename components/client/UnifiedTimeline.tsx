@@ -264,7 +264,8 @@ export default function UnifiedTimeline({ snapshots }: UnifiedTimelineProps) {
                     name="토큰 (k, 증가분)"
                     fill="#ff385c"
                     fillOpacity={0.85}
-                    maxBarSize={24}
+                    barSize={hours <= 1 ? 24 : hours <= 6 ? 18 : hours <= 24 ? 12 : 6}
+                    minPointSize={3}
                   />
                   <Line
                     yAxisId="cost"
