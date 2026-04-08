@@ -217,29 +217,6 @@ export default function UnifiedTimeline({ snapshots }: UnifiedTimelineProps) {
                 iconSize={16}
               />
 
-              {/* 오프라인 구간 회색 밴드 */}
-              {overlay.offlineBands.map((b, i) => (
-                <ReferenceArea
-                  key={`band-${i}`}
-                  x1={b.start}
-                  x2={b.end}
-                  fill="#6a6a6a"
-                  fillOpacity={0.12}
-                  ifOverflow="visible"
-                />
-              ))}
-
-              {/* 재시작 빨간 세로선 */}
-              {overlay.restarts.map((r, i) => (
-                <ReferenceLine
-                  key={`r-${i}`}
-                  x={r}
-                  stroke="#ff385c"
-                  strokeDasharray="2 2"
-                  strokeWidth={1}
-                />
-              ))}
-
               {tab === "usage" && (
                 <>
                   <YAxis
@@ -259,6 +236,27 @@ export default function UnifiedTimeline({ snapshots }: UnifiedTimelineProps) {
                     tick={{ fontSize: 10, fill: "#6a6a6a" }}
                     width={36}
                   />
+                  {overlay.offlineBands.map((b, i) => (
+                    <ReferenceArea
+                      key={`band-${i}`}
+                      yAxisId="tok"
+                      x1={b.start}
+                      x2={b.end}
+                      fill="#6a6a6a"
+                      fillOpacity={0.12}
+                      ifOverflow="extendDomain"
+                    />
+                  ))}
+                  {overlay.restarts.map((r, i) => (
+                    <ReferenceLine
+                      key={`r-${i}`}
+                      yAxisId="tok"
+                      x={r}
+                      stroke="#ff385c"
+                      strokeDasharray="2 2"
+                      strokeWidth={1}
+                    />
+                  ))}
                   <Line
                     yAxisId="tok"
                     type="monotone"
@@ -283,18 +281,42 @@ export default function UnifiedTimeline({ snapshots }: UnifiedTimelineProps) {
               {tab === "resource" && (
                 <>
                   <YAxis
+                    yAxisId="pct"
                     tick={{ fontSize: 10, fill: "#6a6a6a" }}
                     width={32}
                     domain={[0, 100]}
                     tickFormatter={(v) => `${v}%`}
                   />
+                  {overlay.offlineBands.map((b, i) => (
+                    <ReferenceArea
+                      key={`band-${i}`}
+                      yAxisId="pct"
+                      x1={b.start}
+                      x2={b.end}
+                      fill="#6a6a6a"
+                      fillOpacity={0.12}
+                      ifOverflow="extendDomain"
+                    />
+                  ))}
+                  {overlay.restarts.map((r, i) => (
+                    <ReferenceLine
+                      key={`r-${i}`}
+                      yAxisId="pct"
+                      x={r}
+                      stroke="#ff385c"
+                      strokeDasharray="2 2"
+                      strokeWidth={1}
+                    />
+                  ))}
                   <ReferenceLine
+                    yAxisId="pct"
                     y={80}
                     stroke="#c8a000"
                     strokeDasharray="4 4"
                     strokeWidth={1}
                   />
                   <Line
+                    yAxisId="pct"
                     type="monotone"
                     dataKey="cpu"
                     name="CPU"
@@ -304,6 +326,7 @@ export default function UnifiedTimeline({ snapshots }: UnifiedTimelineProps) {
                     connectNulls
                   />
                   <Line
+                    yAxisId="pct"
                     type="monotone"
                     dataKey="memory"
                     name="메모리"
@@ -313,6 +336,7 @@ export default function UnifiedTimeline({ snapshots }: UnifiedTimelineProps) {
                     connectNulls
                   />
                   <Line
+                    yAxisId="pct"
                     type="monotone"
                     dataKey="disk"
                     name="디스크"
@@ -343,6 +367,27 @@ export default function UnifiedTimeline({ snapshots }: UnifiedTimelineProps) {
                     tick={{ fontSize: 10, fill: "#6a6a6a" }}
                     width={28}
                   />
+                  {overlay.offlineBands.map((b, i) => (
+                    <ReferenceArea
+                      key={`band-${i}`}
+                      yAxisId="lat"
+                      x1={b.start}
+                      x2={b.end}
+                      fill="#6a6a6a"
+                      fillOpacity={0.12}
+                      ifOverflow="extendDomain"
+                    />
+                  ))}
+                  {overlay.restarts.map((r, i) => (
+                    <ReferenceLine
+                      key={`r-${i}`}
+                      yAxisId="lat"
+                      x={r}
+                      stroke="#ff385c"
+                      strokeDasharray="2 2"
+                      strokeWidth={1}
+                    />
+                  ))}
                   <Line
                     yAxisId="lat"
                     type="monotone"
