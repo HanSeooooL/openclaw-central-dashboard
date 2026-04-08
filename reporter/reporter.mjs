@@ -388,7 +388,13 @@ async function runOpenClaw(args) {
     throw new Error(`openclaw 실행 실패 (${label})${meta}: ${e.message}${detail ? `\n  ${detail}` : ""}`);
   }
   if (!stdout.trim()) {
-    throw new Error(`openclaw 빈 출력 (${label})${stderr.trim() ? `\n  stderr: ${stderr.trim()}` : ""}`);
+    // openclaw 일부 서브커맨드(tasks list --json 등)는 결과를 stderr 로 내보낸다.
+    // stderr 가 JSON-like("{" 또는 "[" 로 시작) 면 유효한 출력으로 취급.
+    const errTrim = stderr.trim();
+    if (errTrim && (errTrim.startsWith("{") || errTrim.startsWith("["))) {
+      return stderr;
+    }
+    throw new Error(`openclaw 빈 출력 (${label})${errTrim ? `\n  stderr: ${errTrim}` : ""}`);
   }
   return stdout;
 }
