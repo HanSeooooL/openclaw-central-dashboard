@@ -88,8 +88,27 @@ Deno.serve(async (req) => {
 
     if (insertError) throw insertError;
 
+    // Reporter liveness — 성공 수신 시각 기록 (게이트웨이 상태와 무관)
+    await supabase
+      .from("clients")
+      .update({ last_seen: new Date().toISOString() })
+      .eq("id", clientId);
+
+    // 알림 메타데이터 빌더 — 해당 스냅샷 시점의 장애 원인 컨텍스트를 붙임
+    const buildMeta = (extra: Record<string, unknown> = {}) => ({
+      debug_status_error: fullStatus.debug_status_error ?? null,
+      debug_health_error: fullStatus.debug_health_error ?? null,
+      debug_gateway_error: fullStatus.debug_gateway_error ?? null,
+      gateway_latency_ms: fullStatus.gateway_latency_ms ?? null,
+      gateway_uptime: fullStatus.gateway_uptime ?? null,
+      cpu_usage: systemInfo?.cpu_usage ?? null,
+      memory_percent: systemInfo?.memory_percent ?? null,
+      disk_percent: systemInfo?.disk_percent ?? null,
+      ...extra,
+    });
+
     // 알림 생성 (상태 전환 감지)
-    const alerts: { client_id: string; type: string; message: string }[] = [];
+    const alerts: { client_id: string; type: string; message: string; metadata: Record<string, unknown> }[] = [];
     const now = Date.now();
 
     // 게이트웨이 오프라인 전환
@@ -98,6 +117,7 @@ Deno.serve(async (req) => {
         client_id: clientId,
         type: "gateway_offline",
         message: "게이트웨이 연결이 끊어졌습니다.",
+        metadata: buildMeta(),
       });
     }
 
@@ -107,6 +127,7 @@ Deno.serve(async (req) => {
         client_id: clientId,
         type: "gateway_offline_first",
         message: "최초 등록 시점에 게이트웨이가 오프라인 상태입니다.",
+        metadata: buildMeta(),
       });
     }
 
@@ -118,6 +139,7 @@ Deno.serve(async (req) => {
         client_id: clientId,
         type: "task_failed",
         message: `태스크 ${delta}개 실패 (누적 ${fullStatus.tasks.failed}개)`,
+        metadata: buildMeta({ tasks_failed_delta: delta, tasks_failed_total: fullStatus.tasks.failed }),
       });
     }
 
@@ -131,6 +153,7 @@ Deno.serve(async (req) => {
           client_id: clientId,
           type: "channel_down",
           message: `${currCh.name} 채널이 오프라인 상태입니다.`,
+          metadata: buildMeta({ channel_name: currCh.name, channel_status: currCh.status }),
         });
       }
     }

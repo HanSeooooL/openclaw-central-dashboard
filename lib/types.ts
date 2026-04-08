@@ -94,6 +94,7 @@ export interface Client {
   slug: string;
   created_at: string;
   notes: string | null;
+  last_seen: string | null;
 }
 
 export interface Snapshot {
@@ -111,13 +112,28 @@ export interface Snapshot {
   system_info: SystemInfo | null;
 }
 
+export interface AlertMetadata {
+  debug_status_error?: string | null;
+  debug_health_error?: string | null;
+  debug_gateway_error?: string | null;
+  gateway_latency_ms?: number | null;
+  gateway_uptime?: string | null;
+  cpu_usage?: number | null;
+  memory_percent?: number | null;
+  disk_percent?: number | null;
+  channel_name?: string | null;
+  tasks_failed_delta?: number | null;
+  [key: string]: unknown;
+}
+
 export interface ClientAlert {
   id: number;
   client_id: string;
-  type: "gateway_offline" | "task_failed" | "channel_down";
+  type: "gateway_offline" | "gateway_offline_first" | "task_failed" | "channel_down";
   message: string;
   ts: string;
   read: boolean;
+  metadata: AlertMetadata | null;
 }
 
 export interface PendingCommand {
