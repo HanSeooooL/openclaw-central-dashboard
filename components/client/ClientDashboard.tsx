@@ -7,6 +7,7 @@ import UnifiedTimeline from "./UnifiedTimeline";
 import HotSessions from "./HotSessions";
 import IncidentFeed from "./IncidentFeed";
 import NotificationSettings from "./NotificationSettings";
+import TokenSettings from "./TokenSettings";
 import type { FullStatus, SystemInfo, Snapshot, FailedTaskInfo } from "@/lib/types";
 
 function formatRelative(ms: number | null): string {
@@ -211,6 +212,7 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
 
           {/* 설정 */}
           <NotificationSettings clientId={clientId} />
+          <TokenSettings clientId={clientId} />
         </>
       )}
     </div>
