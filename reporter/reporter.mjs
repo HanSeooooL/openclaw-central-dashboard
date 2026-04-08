@@ -465,10 +465,21 @@ const TTL_GATEWAY_SERVICE_MS = 5 * 60_000; // 5분
 const TTL_HEALTH_PROBE_MS    = 60_000;     // 1분
 const TTL_RECENT_LOGS_MS     = 30_000;     // 30초 (단, gateway online 전환시 무시)
 
-/** openclaw CLI 를 실행해 JSON 파싱까지. 실패 시 { data: null, error: string }. */
-async function runOpenClawJson(args) {
+/** Promise 에 자체 타임아웃을 걸어 반환. timeout 시 reject. */
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} 타임아웃 (${ms}ms)`)), ms);
+    promise.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
+
+/** openclaw CLI 를 실행해 JSON 파싱까지. 실패/타임아웃 시 { data: null, error: string }. */
+async function runOpenClawJson(args, { timeoutMs = 8000 } = {}) {
   try {
-    const raw = await runOpenClaw(args);
+    const raw = await withTimeout(runOpenClaw(args), timeoutMs, `openclaw ${args.join(" ")}`);
     const data = parseJsonLoose(raw);
     return { data, error: null };
   } catch (e) {
@@ -578,39 +589,14 @@ async function collectHealthProbe({ force = false } = {}) {
   return { value: normalized, error: null };
 }
 
-/** 최근 gateway 로그 WARN/ERROR tail. WS RPC 우선, 실패 시 로그파일 직접 읽기. */
+/** 최근 gateway 로그 WARN/ERROR tail. 로그파일 직접 tail (WS RPC 는 hang 위험으로 제외). */
 async function collectRecentLogs({ force = false, logFilePathHint = null } = {}) {
   const now = Date.now();
   if (!force && diagCache.recentLogs.value && diagCache.recentLogs.expiresAt > now) {
     return { value: diagCache.recentLogs.value };
   }
-  // 1) WS RPC 경로
   let lines = null;
-  try {
-    const raw = await runOpenClaw(["logs", "--json", "--limit", "120", "--max-bytes", "250000"]);
-    const text = String(raw || "");
-    const out = [];
-    for (const ln of text.split("\n")) {
-      const s = ln.trim();
-      if (!s) continue;
-      let obj;
-      try { obj = JSON.parse(s); } catch { continue; }
-      if (obj?.type !== "log") continue;
-      const level = String(obj.level ?? "").toUpperCase();
-      if (level !== "WARN" && level !== "ERROR") continue;
-      out.push({
-        ts: obj.time ?? new Date().toISOString(),
-        level,
-        subsystem: obj.subsystem ?? null,
-        message: String(obj.message ?? "").slice(0, 500),
-      });
-    }
-    if (out.length > 0) lines = out.slice(-40);
-  } catch {
-    // WS RPC 실패 → fallback
-  }
-  // 2) 로그파일 직접 tail fallback
-  if (!lines && logFilePathHint) {
+  if (logFilePathHint) {
     lines = readRecentLogLinesFromFile(logFilePathHint, { maxLines: 40 });
   }
   if (lines) {
