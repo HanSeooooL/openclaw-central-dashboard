@@ -688,7 +688,7 @@ async function collectAndReport() {
   try {
     let fullStatus;
     try {
-      const raw = await withTimeout(runOpenClaw(["status", "--json"]), 12000, "openclaw status");
+      const raw = await withTimeout(runOpenClaw(["status", "--json"]), 25000, "openclaw status");
       fullStatus = normalizeStatus(parseJsonLoose(raw));
     } catch (e) {
       const snippet = typeof e?.message === "string" ? e.message.slice(0, 300) : String(e).slice(0, 300);
