@@ -10,7 +10,7 @@
  */
 
 import { exec, execFile, execSync } from "node:child_process";
-import { readFileSync, existsSync, accessSync, constants as fsConstants, statfsSync } from "node:fs";
+import { readFileSync, existsSync, accessSync, constants as fsConstants, statfsSync, openSync, fstatSync, readSync, closeSync } from "node:fs";
 import { homedir, cpus, totalmem, freemem } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -449,11 +449,205 @@ async function getSystemInfo() {
 }
 
 // ─────────────────────────────────────────
+// 진단 수집 (health / gateway status / logs) + TTL 캐시
+// ─────────────────────────────────────────
+
+/**
+ * TTL 기반 메모리 캐시.
+ * value 는 "수집 성공시" 만 저장 — 실패는 expiresAt=0 으로 유지해서 매 스냅샷마다 재시도.
+ */
+const diagCache = {
+  gatewayService: { value: null, expiresAt: 0 },
+  healthProbe:    { value: null, expiresAt: 0 },
+  recentLogs:     { value: null, expiresAt: 0 },
+};
+const TTL_GATEWAY_SERVICE_MS = 5 * 60_000; // 5분
+const TTL_HEALTH_PROBE_MS    = 60_000;     // 1분
+const TTL_RECENT_LOGS_MS     = 30_000;     // 30초 (단, gateway online 전환시 무시)
+
+/** openclaw CLI 를 실행해 JSON 파싱까지. 실패 시 { data: null, error: string }. */
+async function runOpenClawJson(args) {
+  try {
+    const raw = await runOpenClaw(args);
+    const data = parseJsonLoose(raw);
+    return { data, error: null };
+  } catch (e) {
+    const msg = typeof e?.message === "string" ? e.message : String(e);
+    return { data: null, error: msg.slice(0, 2000) };
+  }
+}
+
+/** 파일 끝에서부터 거꾸로 JSONL 을 파싱해 WARN/ERROR 만 추려 정규화. 최신이 뒤에 오도록 반환. */
+function readRecentLogLinesFromFile(logFilePath, { maxLines = 40, tailBytes = 300_000 } = {}) {
+  try {
+    if (!logFilePath || !existsSync(logFilePath)) return null;
+    // 큰 파일은 끝만 읽음
+    const fd = openSync(logFilePath, "r");
+    const st = fstatSync(fd);
+    const size = st.size;
+    const start = Math.max(0, size - tailBytes);
+    const buf = Buffer.alloc(size - start);
+    readSync(fd, buf, 0, buf.length, start);
+    closeSync(fd);
+    const text = buf.toString("utf8");
+    // 첫 불완전한 라인은 버림
+    const lines = text.split("\n");
+    if (start > 0) lines.shift();
+    const out = [];
+    for (let i = lines.length - 1; i >= 0 && out.length < maxLines; i--) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      let obj;
+      try { obj = JSON.parse(line); } catch { continue; }
+      const meta = obj?._meta ?? {};
+      const level = String(meta.logLevelName ?? "").toUpperCase();
+      if (level !== "WARN" && level !== "ERROR") continue;
+      // message 재구성: 0,1,2… 숫자키를 순서대로 join
+      const parts = [];
+      for (let k = 0; obj[k] !== undefined; k++) {
+        const v = obj[k];
+        parts.push(typeof v === "string" ? v : JSON.stringify(v));
+      }
+      const msg = (parts.join(" ") || "").slice(0, 500);
+      out.push({
+        ts: obj.time ?? new Date(meta.date ?? Date.now()).toISOString(),
+        level,
+        subsystem: (obj.subsystem ?? meta?.name ?? null)?.toString().slice(0, 80) || null,
+        message: msg,
+      });
+    }
+    // 시간 오름차순 정렬 (뒤가 최신)
+    return out.reverse();
+  } catch {
+    return null;
+  }
+}
+
+/** openclaw gateway status --json → 정규화된 GatewayServiceState 객체 + logFile 반환. */
+async function collectGatewayService({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && diagCache.gatewayService.value && diagCache.gatewayService.expiresAt > now) {
+    return { value: diagCache.gatewayService.value, error: null };
+  }
+  const { data, error } = await runOpenClawJson(["gateway", "status", "--json"]);
+  if (!data) return { value: null, error };
+  const svc = data.service ?? {};
+  const rt = svc.runtime ?? {};
+  const audit = svc.configAudit ?? {};
+  const normalized = {
+    state: (rt.status === "running" ? "running" : rt.status ? "stopped" : "unknown"),
+    pid: typeof rt.pid === "number" ? rt.pid : null,
+    loaded: !!svc.loaded,
+    config_audit_ok: audit.ok !== false,
+    config_audit_issues: Array.isArray(audit.issues)
+      ? audit.issues.map((i) => (typeof i === "string" ? i : JSON.stringify(i))).slice(0, 10)
+      : [],
+    log_file: typeof data.logFile === "string" ? data.logFile : null,
+  };
+  diagCache.gatewayService = { value: normalized, expiresAt: now + TTL_GATEWAY_SERVICE_MS };
+  return { value: normalized, error: null };
+}
+
+/** openclaw health --json → 채널 probe 요약. */
+async function collectHealthProbe({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && diagCache.healthProbe.value && diagCache.healthProbe.expiresAt > now) {
+    return { value: diagCache.healthProbe.value, error: null };
+  }
+  const { data, error } = await runOpenClawJson(["health", "--json"]);
+  if (!data) return { value: null, error };
+  const channels = [];
+  const rawChannels = data.channels ?? {};
+  for (const [name, ch] of Object.entries(rawChannels)) {
+    // 채널에 account 별 상태가 있으면 default 우선, 없으면 채널 자체 속성
+    const acc = ch?.accounts?.default ?? ch;
+    const probe = acc?.probe ?? {};
+    channels.push({
+      name,
+      running: !!acc?.running,
+      configured: !!acc?.configured,
+      last_error: acc?.lastError ? String(acc.lastError).slice(0, 500) : null,
+      probe_ok: !!probe?.ok,
+      probe_error: probe?.error ? String(probe.error).slice(0, 500) : null,
+      probe_elapsed_ms: typeof probe?.elapsedMs === "number" ? probe.elapsedMs : null,
+      bot_name: acc?.probe?.bot?.username ?? null,
+    });
+  }
+  const normalized = { channels, collected_at: now };
+  diagCache.healthProbe = { value: normalized, expiresAt: now + TTL_HEALTH_PROBE_MS };
+  return { value: normalized, error: null };
+}
+
+/** 최근 gateway 로그 WARN/ERROR tail. WS RPC 우선, 실패 시 로그파일 직접 읽기. */
+async function collectRecentLogs({ force = false, logFilePathHint = null } = {}) {
+  const now = Date.now();
+  if (!force && diagCache.recentLogs.value && diagCache.recentLogs.expiresAt > now) {
+    return { value: diagCache.recentLogs.value };
+  }
+  // 1) WS RPC 경로
+  let lines = null;
+  try {
+    const raw = await runOpenClaw(["logs", "--json", "--limit", "120", "--max-bytes", "250000"]);
+    const text = String(raw || "");
+    const out = [];
+    for (const ln of text.split("\n")) {
+      const s = ln.trim();
+      if (!s) continue;
+      let obj;
+      try { obj = JSON.parse(s); } catch { continue; }
+      if (obj?.type !== "log") continue;
+      const level = String(obj.level ?? "").toUpperCase();
+      if (level !== "WARN" && level !== "ERROR") continue;
+      out.push({
+        ts: obj.time ?? new Date().toISOString(),
+        level,
+        subsystem: obj.subsystem ?? null,
+        message: String(obj.message ?? "").slice(0, 500),
+      });
+    }
+    if (out.length > 0) lines = out.slice(-40);
+  } catch {
+    // WS RPC 실패 → fallback
+  }
+  // 2) 로그파일 직접 tail fallback
+  if (!lines && logFilePathHint) {
+    lines = readRecentLogLinesFromFile(logFilePathHint, { maxLines: 40 });
+  }
+  if (lines) {
+    diagCache.recentLogs = { value: lines, expiresAt: now + TTL_RECENT_LOGS_MS };
+  }
+  return { value: lines };
+}
+
+// ─────────────────────────────────────────
+// Reporter 자체 진단 state (24h 카운터 + 마지막 에러)
+// ─────────────────────────────────────────
+
+const REPORTER_VERSION = "2026.4.8-diagnostics";
+const reporterDiag = {
+  ws_reconnects_24h: 0,
+  last_ws_close_code: null,
+  last_ws_close_reason: null,
+  ingest_failures_24h: 0,
+  last_ingest_error: null,
+  sys_info_fail_streak: 0,
+  startup_at: new Date().toISOString(),
+  reporter_version: REPORTER_VERSION,
+};
+// 24h 롤링: 단순히 1시간마다 ceil 감산 — 정확한 sliding window 는 과함
+setInterval(() => {
+  // 24h 지나면 카운터 reset
+  reporterDiag.ws_reconnects_24h = Math.max(0, reporterDiag.ws_reconnects_24h - 1);
+  reporterDiag.ingest_failures_24h = Math.max(0, reporterDiag.ingest_failures_24h - 1);
+}, 60 * 60_000).unref?.();
+
+// ─────────────────────────────────────────
 // 스냅샷 수집 & 전송
 // ─────────────────────────────────────────
 
 let collecting = false;
 let sysInfoFailStreak = 0;
+let prevGatewayOnline = null; // 직전 스냅샷의 gateway_online — 전환 감지용
 
 async function collectAndReport() {
   if (collecting) {
@@ -497,19 +691,70 @@ async function collectAndReport() {
       console.warn(`[Reporter] openclaw tasks list 실패(무시): ${snippet}`);
     }
 
+    // ── 진단 파이프라인: gateway service, health probe, recent logs ──
+    const gatewayTransitioned =
+      prevGatewayOnline !== null && prevGatewayOnline !== fullStatus.gateway_online;
+    const forceRecollect = gatewayTransitioned;
+
+    try {
+      const gws = await collectGatewayService({ force: forceRecollect });
+      if (gws.value) fullStatus.gateway_service = gws.value;
+      if (gws.error) fullStatus.debug_gateway_error = gws.error;
+    } catch (e) {
+      fullStatus.debug_gateway_error = String(e?.message ?? e).slice(0, 500);
+    }
+
+    try {
+      const hp = await collectHealthProbe({ force: forceRecollect });
+      if (hp.value) {
+        fullStatus.health_probe = hp.value;
+        // channels: [] 공백을 health_probe 에서 파생
+        if ((!fullStatus.channels || fullStatus.channels.length === 0) && Array.isArray(hp.value.channels)) {
+          fullStatus.channels = hp.value.channels.map((c) => ({
+            name: c.name,
+            status: c.running && c.probe_ok ? "online" : "offline",
+            bot_name: c.bot_name ?? "",
+            latency_ms: c.probe_elapsed_ms ?? null,
+          }));
+        }
+      }
+      if (hp.error) fullStatus.debug_health_error = hp.error;
+    } catch (e) {
+      fullStatus.debug_health_error = String(e?.message ?? e).slice(0, 500);
+    }
+
+    try {
+      const logFilePathHint = fullStatus.gateway_service?.log_file ?? null;
+      const logs = await collectRecentLogs({ force: forceRecollect, logFilePathHint });
+      if (logs.value) fullStatus.recent_log_lines = logs.value;
+    } catch (e) {
+      // 로그 수집 실패는 치명적이지 않음
+      console.warn(`[Reporter] recent logs 수집 실패(무시): ${String(e?.message ?? e).slice(0, 200)}`);
+    }
+
+    try {
+      fullStatus.debug_bin = findOpenClawBin();
+    } catch {
+      fullStatus.debug_bin = "";
+    }
+
+    prevGatewayOnline = fullStatus.gateway_online;
+
     let systemInfo = null;
     try {
       systemInfo = await getSystemInfo();
       sysInfoFailStreak = 0;
+      reporterDiag.sys_info_fail_streak = 0;
     } catch (e) {
       sysInfoFailStreak++;
+      reporterDiag.sys_info_fail_streak = sysInfoFailStreak;
       const msg = `[Reporter] 시스템 정보 수집 실패 (${sysInfoFailStreak}회 연속): ${e?.message ?? e}`;
       if (sysInfoFailStreak >= 3) console.error(msg);
       else console.warn(msg);
     }
 
     const totalCostUsd = estimateTotalCost(fullStatus.sessions);
-    const payload = JSON.stringify({ fullStatus, systemInfo, totalCostUsd });
+    const payload = JSON.stringify({ fullStatus, systemInfo, totalCostUsd, reporterDiagnostics: reporterDiag });
 
     // 1차 전송 + 5xx/네트워크 실패 시 5초 후 1회 재시도
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -531,9 +776,13 @@ async function collectAndReport() {
         }
         const text = await res.text().catch(() => "");
         console.warn(`[Reporter] ingest 실패 (${res.status})${attempt === 1 ? " → 5초 후 재시도" : ""}: ${text.slice(0, 300)}`);
+        reporterDiag.ingest_failures_24h++;
+        reporterDiag.last_ingest_error = `HTTP ${res.status}: ${text.slice(0, 200)}`;
         if (res.status < 500 || attempt === 2) return false; // 4xx는 재시도 안 함
       } catch (e) {
         console.warn(`[Reporter] 전송 실패${attempt === 1 ? " → 5초 후 재시도" : ""}: ${e?.message ?? e}`);
+        reporterDiag.ingest_failures_24h++;
+        reporterDiag.last_ingest_error = String(e?.message ?? e).slice(0, 200);
         if (attempt === 2) return false;
       }
       await new Promise((r) => setTimeout(r, 5000));
@@ -867,6 +1116,12 @@ async function connectGatewayWebSocket() {
       wsPendingReqs.clear();
       clearTimeout(authTimeout);
       resolveOnce(false);
+
+      reporterDiag.last_ws_close_code = event.code ?? null;
+      reporterDiag.last_ws_close_reason = typeof event.reason === "string" ? event.reason.slice(0, 200) : null;
+      if (event.code !== 1000 && event.code !== 1001) {
+        reporterDiag.ws_reconnects_24h++;
+      }
 
       if (event.code !== 1000 && event.code !== 1001) {
         console.log(`[Reporter] WebSocket 연결 끊어짐 (code: ${event.code}) → ${WS_RECONNECT_MS / 1000}초 후 재연결`);

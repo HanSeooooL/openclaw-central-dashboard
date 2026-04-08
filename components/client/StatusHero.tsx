@@ -229,6 +229,47 @@ export default function StatusHero({ status, snapshots, loading }: StatusHeroPro
                         </pre>
                       </div>
                     ))}
+                    {status.gateway_service && (
+                      <div className="bg-white/60 rounded p-2">
+                        <p className="text-[9px] text-secondary font-mono font-semibold uppercase">
+                          gateway service
+                        </p>
+                        <p className="text-[10px] text-nearblack mt-1">
+                          state: <span className="font-mono">{status.gateway_service.state}</span>
+                          {status.gateway_service.pid != null && ` · pid ${status.gateway_service.pid}`}
+                          {status.gateway_service.loaded ? " · loaded" : " · not loaded"}
+                        </p>
+                        {status.gateway_service.config_audit_issues?.length > 0 && (
+                          <ul className="text-[10px] text-rausch font-mono mt-1 list-disc list-inside">
+                            {status.gateway_service.config_audit_issues.map((iss, i) => (
+                              <li key={i}>{iss}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                    {Array.isArray(status.recent_log_lines) && status.recent_log_lines.length > 0 && (
+                      <div className="bg-white/60 rounded p-2">
+                        <p className="text-[9px] text-secondary font-mono font-semibold uppercase">
+                          recent gateway logs ({status.recent_log_lines.length})
+                        </p>
+                        <div className="mt-1 space-y-0.5 max-h-48 overflow-y-auto">
+                          {status.recent_log_lines.slice(0, 8).map((l, i) => (
+                            <div key={i} className="text-[10px] font-mono leading-tight">
+                              <span
+                                className={
+                                  l.level === "ERROR" ? "text-rausch" : "text-amber-700"
+                                }
+                              >
+                                [{l.level}]
+                              </span>{" "}
+                              <span className="text-[#999]">{l.subsystem ?? ""}</span>{" "}
+                              <span className="text-nearblack break-all">{l.message}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

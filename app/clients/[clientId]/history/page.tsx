@@ -95,6 +95,32 @@ export default function HistoryPage({ params }: PageProps) {
         </div>
       )}
 
+      {/* 최근 게이트웨이 로그 (WARN/ERROR) */}
+      {Array.isArray(status?.recent_log_lines) && status.recent_log_lines.length > 0 && (
+        <div className="bg-white shadow-card rounded-card p-5">
+          <h3 className="text-sm font-semibold text-nearblack mb-2">
+            최근 gateway 로그 (WARN/ERROR · {status.recent_log_lines.length})
+          </h3>
+          <p className="text-[11px] text-secondary mb-3">
+            장애 후 들어오셨다면 여기서 직전 원인을 빠르게 확인하세요.
+          </p>
+          <div className="space-y-0.5 max-h-96 overflow-y-auto">
+            {status.recent_log_lines.map((l, i) => (
+              <div key={i} className="text-[11px] font-mono leading-tight">
+                <span className="text-[#999]">{l.ts}</span>{" "}
+                <span
+                  className={l.level === "ERROR" ? "text-rausch" : "text-amber-700"}
+                >
+                  [{l.level}]
+                </span>{" "}
+                <span className="text-[#999]">{l.subsystem ?? ""}</span>{" "}
+                <span className="text-nearblack break-all">{l.message}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 알림 타임라인 */}
       <ClientAlertsPanel clientId={clientId} initialAlerts={alerts} />
     </div>

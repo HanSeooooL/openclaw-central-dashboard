@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
 
     const clientId = client.id;
     const body = await req.json();
-    const { fullStatus, systemInfo, totalCostUsd = 0 } = body;
+    const { fullStatus, systemInfo, totalCostUsd = 0, reporterDiagnostics = null } = body;
 
     if (!fullStatus) {
       return new Response(JSON.stringify({ error: "fullStatus required" }), { status: 400, headers: corsHeaders });
@@ -92,10 +92,14 @@ Deno.serve(async (req) => {
     // Reporter liveness — 성공 수신 시각 기록 (게이트웨이 상태와 무관)
     await supabase
       .from("clients")
-      .update({ last_seen: new Date().toISOString() })
+      .update({
+        last_seen: new Date().toISOString(),
+        ...(reporterDiagnostics ? { reporter_diagnostics: reporterDiagnostics } : {}),
+      })
       .eq("id", clientId);
 
     // 알림 메타데이터 빌더 — 해당 스냅샷 시점의 장애 원인 컨텍스트를 붙임
+    const recentLogLines = Array.isArray(fullStatus.recent_log_lines) ? fullStatus.recent_log_lines : null;
     const buildMeta = (extra: Record<string, unknown> = {}) => ({
       debug_status_error: fullStatus.debug_status_error ?? null,
       debug_health_error: fullStatus.debug_health_error ?? null,
@@ -105,6 +109,8 @@ Deno.serve(async (req) => {
       cpu_usage: systemInfo?.cpu_usage ?? null,
       memory_percent: systemInfo?.memory_percent ?? null,
       disk_percent: systemInfo?.disk_percent ?? null,
+      recent_log_lines: recentLogLines,
+      gateway_service: fullStatus.gateway_service ?? null,
       ...extra,
     });
 
@@ -172,11 +178,18 @@ Deno.serve(async (req) => {
     for (const currCh of currChannels) {
       const prevCh = prevChannels.find((c) => c.name === currCh.name);
       if (prevCh?.status === "online" && currCh.status !== "online") {
+        const probe = (fullStatus.health_probe?.channels ?? []).find(
+          (c: { name: string }) => c.name === currCh.name
+        ) ?? null;
         alerts.push({
           client_id: clientId,
           type: "channel_down",
           message: `${currCh.name} 채널이 오프라인 상태입니다.`,
-          metadata: buildMeta({ channel_name: currCh.name, channel_status: currCh.status }),
+          metadata: buildMeta({
+            channel_name: currCh.name,
+            channel_status: currCh.status,
+            channel_probe: probe,
+          }),
         });
       }
     }

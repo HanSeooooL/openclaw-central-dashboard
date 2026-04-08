@@ -48,6 +48,49 @@ export interface FailedTaskInfo {
   terminal_summary: string | null;
 }
 
+export interface HealthProbeChannel {
+  name: string;
+  running: boolean;
+  configured: boolean;
+  last_error: string | null;
+  probe_ok: boolean;
+  probe_error: string | null;
+  probe_elapsed_ms: number | null;
+  bot_name: string | null;
+}
+
+export interface HealthProbe {
+  channels: HealthProbeChannel[];
+  collected_at: number;
+}
+
+export interface GatewayServiceState {
+  state: "running" | "stopped" | "unknown";
+  pid: number | null;
+  loaded: boolean;
+  config_audit_ok: boolean;
+  config_audit_issues: string[];
+  log_file: string | null;
+}
+
+export interface LogLineSummary {
+  ts: string;
+  level: "WARN" | "ERROR" | "INFO";
+  subsystem: string | null;
+  message: string;
+}
+
+export interface ReporterDiagnostics {
+  ws_reconnects_24h: number;
+  last_ws_close_code: number | null;
+  last_ws_close_reason: string | null;
+  ingest_failures_24h: number;
+  last_ingest_error: string | null;
+  sys_info_fail_streak: number;
+  startup_at: string;
+  reporter_version: string;
+}
+
 export interface HeartbeatAgent {
   agent_id: string;
   enabled: boolean;
@@ -84,6 +127,12 @@ export interface FullStatus {
   debug_gateway_error: string | null;
   /** Reporter 가 `openclaw tasks list --status failed` 로 수집한 최근 실패 태스크 상세 (최대 10개) */
   failed_tasks?: FailedTaskInfo[];
+  /** `openclaw health --json` 채널 probe 상세 */
+  health_probe?: HealthProbe | null;
+  /** `openclaw gateway status --json` 서비스·config 상태 */
+  gateway_service?: GatewayServiceState | null;
+  /** gateway 로그 WARN/ERROR 라인 tail (최대 40개) */
+  recent_log_lines?: LogLineSummary[] | null;
 }
 
 export interface SystemInfo {
@@ -107,6 +156,7 @@ export interface Client {
   created_at: string;
   notes: string | null;
   last_seen?: string | null;
+  reporter_diagnostics?: ReporterDiagnostics | null;
 }
 
 export interface Snapshot {
@@ -136,6 +186,12 @@ export interface AlertMetadata {
   channel_name?: string | null;
   tasks_failed_delta?: number | null;
   failed_tasks?: FailedTaskInfo[];
+  /** 장애 순간의 게이트웨이 로그 tail */
+  recent_log_lines?: LogLineSummary[];
+  /** 장애 순간의 게이트웨이 서비스 상태 */
+  gateway_service?: GatewayServiceState | null;
+  /** channel_down 알림에 붙는 해당 채널의 probe 상세 */
+  channel_probe?: HealthProbeChannel | null;
   [key: string]: unknown;
 }
 

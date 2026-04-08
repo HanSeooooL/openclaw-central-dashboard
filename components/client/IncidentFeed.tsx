@@ -62,7 +62,10 @@ function hasMetaContent(meta: AlertMetadata | null): boolean {
       meta.memory_percent != null ||
       meta.disk_percent != null ||
       meta.gateway_uptime ||
-      (Array.isArray(meta.failed_tasks) && meta.failed_tasks.length > 0)
+      (Array.isArray(meta.failed_tasks) && meta.failed_tasks.length > 0) ||
+      (Array.isArray(meta.recent_log_lines) && meta.recent_log_lines.length > 0) ||
+      meta.gateway_service ||
+      meta.channel_probe
   );
 }
 
@@ -168,6 +171,77 @@ function IncidentRow({ alert }: { alert: ClientAlert }) {
                   </pre>
                 </div>
               ))}
+
+              {/* gateway service 상태 */}
+              {meta.gateway_service && (
+                <div className="bg-white/60 rounded p-2">
+                  <p className="text-[9px] text-secondary font-mono font-semibold uppercase">
+                    gateway service
+                  </p>
+                  <p className="text-[10px] text-nearblack mt-1">
+                    state: <span className="font-mono">{meta.gateway_service.state}</span>
+                    {meta.gateway_service.pid != null && ` · pid ${meta.gateway_service.pid}`}
+                    {meta.gateway_service.loaded ? " · loaded" : " · not loaded"}
+                  </p>
+                  {meta.gateway_service.config_audit_issues?.length > 0 && (
+                    <ul className="text-[10px] text-rausch font-mono mt-1 list-disc list-inside">
+                      {meta.gateway_service.config_audit_issues.map((iss, i) => (
+                        <li key={i}>{iss}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              {/* channel probe (channel_down) */}
+              {meta.channel_probe && (
+                <div className="bg-white/60 rounded p-2">
+                  <p className="text-[9px] text-secondary font-mono font-semibold uppercase">
+                    channel probe
+                  </p>
+                  <p className="text-[10px] text-nearblack mt-1">
+                    {meta.channel_probe.name} · running:{" "}
+                    {String(meta.channel_probe.running)} · ok:{" "}
+                    {String(meta.channel_probe.probe_ok)}
+                    {meta.channel_probe.probe_elapsed_ms != null &&
+                      ` · ${meta.channel_probe.probe_elapsed_ms}ms`}
+                  </p>
+                  {meta.channel_probe.probe_error && (
+                    <pre className="text-[10px] text-rausch font-mono whitespace-pre-wrap break-all mt-1">
+                      probe: {meta.channel_probe.probe_error}
+                    </pre>
+                  )}
+                  {meta.channel_probe.last_error && (
+                    <pre className="text-[10px] text-rausch font-mono whitespace-pre-wrap break-all mt-1">
+                      last: {meta.channel_probe.last_error}
+                    </pre>
+                  )}
+                </div>
+              )}
+
+              {/* gateway 로그 tail */}
+              {Array.isArray(meta.recent_log_lines) && meta.recent_log_lines.length > 0 && (
+                <div className="bg-white/60 rounded p-2">
+                  <p className="text-[9px] text-secondary font-mono font-semibold uppercase">
+                    recent gateway logs ({meta.recent_log_lines.length})
+                  </p>
+                  <div className="mt-1 space-y-0.5 max-h-48 overflow-y-auto">
+                    {meta.recent_log_lines.slice(0, 12).map((l, i) => (
+                      <div key={i} className="text-[10px] font-mono leading-tight">
+                        <span
+                          className={
+                            l.level === "ERROR" ? "text-rausch" : "text-amber-700"
+                          }
+                        >
+                          [{l.level}]
+                        </span>{" "}
+                        <span className="text-[#999]">{l.subsystem ?? ""}</span>{" "}
+                        <span className="text-nearblack break-all">{l.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* 실패 태스크 상세 */}
               {Array.isArray(meta.failed_tasks) && meta.failed_tasks.length > 0 && (
