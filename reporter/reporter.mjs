@@ -15,6 +15,7 @@ import { homedir, cpus, totalmem, freemem } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { performance } from "node:perf_hooks";
+import { createPrivateKey, createPublicKey, sign as cryptoSign, randomBytes } from "node:crypto";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -33,6 +34,76 @@ function parseJsonLoose(raw) {
     try { return JSON.parse(s.slice(start, end + 1)); } catch {}
   }
   return JSON.parse(s);
+}
+
+// ─────────────────────────────────────────
+// OpenClaw device identity (WS scope bypass)
+// ─────────────────────────────────────────
+
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+function base64UrlEncode(buf) {
+  return buf.toString("base64").replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
+}
+
+function derivePublicKeyRawBase64Url(publicKeyPem) {
+  const spki = createPublicKey(publicKeyPem).export({ type: "spki", format: "der" });
+  const raw = (spki.length === ED25519_SPKI_PREFIX.length + 32 && spki.subarray(0, ED25519_SPKI_PREFIX.length).equals(ED25519_SPKI_PREFIX))
+    ? spki.subarray(ED25519_SPKI_PREFIX.length)
+    : spki;
+  return base64UrlEncode(raw);
+}
+
+function signDevicePayloadV3(privateKeyPem, payload) {
+  const key = createPrivateKey(privateKeyPem);
+  return base64UrlEncode(cryptoSign(null, Buffer.from(payload, "utf8"), key));
+}
+
+function buildDeviceAuthPayloadV3(p) {
+  const norm = (v) => (typeof v === "string" && v.trim() ? v.trim() : "");
+  return [
+    "v3",
+    p.deviceId,
+    p.clientId,
+    p.clientMode,
+    p.role,
+    p.scopes.join(","),
+    String(p.signedAtMs),
+    p.token ?? "",
+    p.nonce,
+    norm(p.platform),
+    norm(p.deviceFamily),
+  ].join("|");
+}
+
+/** Load ed25519 device identity + operator device token from ~/.openclaw/identity/. */
+function loadOpenClawDeviceIdentity() {
+  const candidates = [];
+  const stateDir = process.env.OPENCLAW_STATE_DIR?.trim();
+  if (stateDir) candidates.push(stateDir);
+  candidates.push(join(homedir(), ".openclaw"));
+  candidates.push(join(homedir(), ".clawdbot"));
+
+  for (const dir of candidates) {
+    try {
+      const identityPath = join(dir, "identity", "device.json");
+      const authPath = join(dir, "identity", "device-auth.json");
+      if (!existsSync(identityPath) || !existsSync(authPath)) continue;
+      const identity = JSON.parse(readFileSync(identityPath, "utf-8"));
+      const auth = JSON.parse(readFileSync(authPath, "utf-8"));
+      const operator = auth?.tokens?.operator;
+      if (!identity?.deviceId || !identity?.privateKeyPem || !identity?.publicKeyPem) continue;
+      if (!operator?.token || !Array.isArray(operator?.scopes)) continue;
+      return {
+        deviceId: identity.deviceId,
+        privateKeyPem: identity.privateKeyPem,
+        publicKeyPem: identity.publicKeyPem,
+        deviceToken: operator.token,
+        scopes: operator.scopes,
+      };
+    } catch {}
+  }
+  return null;
 }
 
 function fetchWithTimeout(url, init = {}) {
@@ -119,6 +190,7 @@ function autoDetectGatewayToken() {
 }
 
 const gateway_token = autoDetectGatewayToken();
+const openClawDeviceIdentity = loadOpenClawDeviceIdentity();
 
 const INGEST_URL = `${supabase_url}/functions/v1/ingest-snapshot`;
 const POLL_URL = `${supabase_url}/functions/v1/poll-commands`;
@@ -624,28 +696,64 @@ async function connectGatewayWebSocket() {
 
       // ── 핸드쉐이크 ──
       if (msg.event === "connect.challenge") {
+        const challengeNonce = typeof msg.payload?.nonce === "string" ? msg.payload.nonce : null;
         const reqId = nextReqId();
         wsPendingReqs.set(reqId, { method: "connect" });
-        ws.send(JSON.stringify({
-          type: "req",
-          id: reqId,
-          method: "connect",
-          params: {
-            client: { id: "cli", mode: "cli", version: "1.0.0", platform: process.platform },
+
+        const clientId = "cli";
+        const clientMode = "cli";
+        const role = "operator";
+        const platform = process.platform;
+        const deviceFamily = "";
+
+        let connectParams;
+        if (openClawDeviceIdentity && challengeNonce) {
+          // 서명된 device-identity 경로 → 서버가 scopes를 유지
+          const signedAtMs = Date.now();
+          const nonce = challengeNonce;
+          const scopes = openClawDeviceIdentity.scopes;
+          const payload = buildDeviceAuthPayloadV3({
+            deviceId: openClawDeviceIdentity.deviceId,
+            clientId,
+            clientMode,
+            role,
+            scopes,
+            signedAtMs,
+            token: openClawDeviceIdentity.deviceToken,
+            nonce,
+            platform,
+            deviceFamily,
+          });
+          const signature = signDevicePayloadV3(openClawDeviceIdentity.privateKeyPem, payload);
+          const publicKey = derivePublicKeyRawBase64Url(openClawDeviceIdentity.publicKeyPem);
+          connectParams = {
+            client: { id: clientId, mode: clientMode, version: "1.0.0", platform },
             minProtocol: 3,
             maxProtocol: 3,
-            role: "operator",
-            scopes: [
-              "operator.admin",
-              "operator.read",
-              "operator.write",
-              "operator.approvals",
-              "operator.pairing",
-              "operator.talk.secrets",
-            ],
+            role,
+            scopes,
+            auth: { deviceToken: openClawDeviceIdentity.deviceToken },
+            device: {
+              id: openClawDeviceIdentity.deviceId,
+              publicKey,
+              signature,
+              signedAt: signedAtMs,
+              nonce,
+            },
+          };
+        } else {
+          // 폴백: shared-secret 토큰 (scopes는 서버에서 []로 초기화됨)
+          connectParams = {
+            client: { id: clientId, mode: clientMode, version: "1.0.0", platform },
+            minProtocol: 3,
+            maxProtocol: 3,
+            role,
+            scopes: [],
             auth: { token: gateway_token },
-          },
-        }));
+          };
+        }
+
+        ws.send(JSON.stringify({ type: "req", id: reqId, method: "connect", params: connectParams }));
         return;
       }
 
@@ -812,7 +920,10 @@ if (gateway_token) {
     : process.env.OPENCLAW_GATEWAY_TOKEN
       ? "OPENCLAW_GATEWAY_TOKEN"
       : "openclaw.json 자동 감지";
-  console.log(`[Reporter] WebSocket 모드 시도 (토큰 출처: ${tokenSrc})...`);
+  const identityMsg = openClawDeviceIdentity
+    ? `device-identity 감지 (scopes: ${openClawDeviceIdentity.scopes.join(",")})`
+    : "device-identity 없음 → heartbeat-only 폴백";
+  console.log(`[Reporter] WebSocket 모드 시도 (토큰 출처: ${tokenSrc}, ${identityMsg})...`);
   const wsOk = await connectGatewayWebSocket();
   if (!wsOk) {
     console.log(`[Reporter] 폴링 모드로 전환 (헬스체크: ${health_check_interval_ms / 1000}s, 풀스캔: ${full_scan_interval_ms / 1000}s)`);
