@@ -143,7 +143,11 @@ Deno.serve(async (req) => {
               typeof t.ended_at === "number" && t.ended_at > prevTsMs
           )
         : [];
-      const firstLabels = recentFailed
+      // recentFailed 가 비어있으면 (과거 실패 태스크가 계속 남아있는 경우) 전체 failed_tasks 에서 label 추출
+      const labelSource = recentFailed.length > 0
+        ? recentFailed
+        : (Array.isArray(fullStatus.failed_tasks) ? fullStatus.failed_tasks : []);
+      const firstLabels = labelSource
         .map((t: { label?: string | null }) => t.label)
         .filter(Boolean)
         .slice(0, 3)
@@ -196,7 +200,11 @@ Deno.serve(async (req) => {
 
       if (fresh.length > 0) {
         const { error: alertError } = await supabase.from("alerts").insert(fresh);
-        if (!alertError) inserted = fresh.length;
+        if (alertError) {
+          console.error("[ingest] alerts insert failed", alertError, JSON.stringify(fresh));
+        } else {
+          inserted = fresh.length;
+        }
       }
     }
 
