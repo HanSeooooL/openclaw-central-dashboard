@@ -4,6 +4,7 @@ import StatusHero from "./StatusHero";
 import KpiStrip from "./KpiStrip";
 import UnifiedTimeline from "./UnifiedTimeline";
 import HotSessions from "./HotSessions";
+import IncidentFeed from "./IncidentFeed";
 import type { FullStatus, SystemInfo, Snapshot } from "@/lib/types";
 
 // ─────────────────────────────────────────
@@ -19,7 +20,6 @@ interface ClientDashboardProps {
 }
 
 export default function ClientDashboard({ clientId, status, systemInfo, snapshots, loading }: ClientDashboardProps) {
-  void clientId;
   void systemInfo;
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6 max-w-6xl mx-auto">
@@ -134,6 +134,9 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
               </div>
             </div>
           </div>
+
+          {/* Layer 5 — Incident Feed */}
+          <IncidentFeed clientId={clientId} />
         </>
       )}
     </div>
