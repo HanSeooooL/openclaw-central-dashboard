@@ -15,15 +15,13 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: "대시보드", icon: "📊", path: "dashboard" },
   { label: "세션", icon: "💬", path: "sessions" },
+  { label: "사용", icon: "💰", path: "usage" },
+  { label: "기록", icon: "🔔", path: "history" },
   { label: "게이트웨이", icon: "🌐", path: "gateway" },
-  { label: "비용", icon: "💰", path: "costs" },
-  { label: "알림", icon: "🔔", path: "alerts" },
-  { label: "로그", icon: "📋", path: "logs" },
-  { label: "모델", icon: "🤖", path: "models" },
 ];
 
-// 하단 탭에 고정 노출 (4개 + 더보기)
-const PRIMARY_TAB_PATHS = ["dashboard", "sessions", "costs", "alerts"];
+// 하단 탭에 고정 노출 (4개 + 더보기). 게이트웨이는 자주 쓰지 않으므로 더보기로.
+const PRIMARY_TAB_PATHS = ["dashboard", "sessions", "usage", "history"];
 const PRIMARY_TABS = NAV_ITEMS.filter((i) => PRIMARY_TAB_PATHS.includes(i.path));
 // 더보기 드로어에만 표시
 const SECONDARY_ITEMS = NAV_ITEMS.filter((i) => !PRIMARY_TAB_PATHS.includes(i.path));
@@ -64,7 +62,7 @@ export default function ClientSidebar({ clientId, clientName }: ClientSidebarPro
         {NAV_ITEMS.map((item) => {
           const href = `/clients/${clientId}/${item.path}`;
           const isActive = pathname === href || pathname.startsWith(href + "/");
-          const showBadge = item.path === "alerts" && unreadCount > 0;
+          const showBadge = item.path === "history" && unreadCount > 0;
 
           return (
             <Link
@@ -125,7 +123,7 @@ export default function ClientSidebar({ clientId, clientName }: ClientSidebarPro
         {PRIMARY_TABS.map((item) => {
           const href = `/clients/${clientId}/${item.path}`;
           const isActive = pathname === href || pathname.startsWith(href + "/");
-          const showBadge = item.path === "alerts" && unreadCount > 0;
+          const showBadge = item.path === "history" && unreadCount > 0;
 
           return (
             <Link
