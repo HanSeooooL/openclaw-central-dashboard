@@ -7,6 +7,7 @@ import {
 import StatusCard from "@/components/shared/StatusCard";
 import ResourceBar from "@/components/shared/ResourceBar";
 import ClientHealthOverview from "./ClientHealthOverview";
+import StatusHero from "./StatusHero";
 import { totalCost, formatCost } from "@/lib/costCalculator";
 import type { FullStatus, SystemInfo, Snapshot } from "@/lib/types";
 
@@ -156,32 +157,13 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6 max-w-6xl mx-auto">
       {/* 헤더 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-[22px] font-semibold text-nearblack" style={{ letterSpacing: "-0.44px" }}>대시보드</h2>
-          <p className="text-sm text-secondary mt-1">OpenClaw 시스템 현황</p>
-        </div>
-        <span
-          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-badge text-xs font-medium ${
-            loading ? "bg-surface text-secondary" :
-            status.gateway_online
-              ? "bg-green-50 text-green-700 border border-green-200"
-              : "bg-[#ff385c]/8 text-rausch border border-[#ff385c]/20"
-          }`}
-        >
-          {loading ? (
-            <span>로딩 중...</span>
-          ) : (
-            <>
-              <span className={`w-2 h-2 rounded-full ${status.gateway_online ? "bg-green-500 animate-pulse" : "bg-[#ff385c]"}`} />
-              {status.gateway_online ? "온라인" : "오프라인"}
-              {status.gateway_latency_ms != null && (
-                <span className="text-secondary">{status.gateway_latency_ms}ms</span>
-              )}
-            </>
-          )}
-        </span>
+      <div>
+        <h2 className="text-[22px] font-semibold text-nearblack" style={{ letterSpacing: "-0.44px" }}>대시보드</h2>
+        <p className="text-sm text-secondary mt-1">OpenClaw 시스템 현황</p>
       </div>
+
+      {/* Layer 1 — Status Hero */}
+      <StatusHero status={status} snapshots={snapshots} loading={loading} />
 
       {/* 건강 개요 */}
       {!loading && (

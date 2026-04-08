@@ -94,7 +94,7 @@ export interface Client {
   slug: string;
   created_at: string;
   notes: string | null;
-  last_seen: string | null;
+  last_seen?: string | null;
 }
 
 export interface Snapshot {

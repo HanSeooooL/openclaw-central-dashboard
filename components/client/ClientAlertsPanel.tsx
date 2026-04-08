@@ -11,12 +11,14 @@ interface ClientAlertsPanelProps {
 
 const alertIcon: Record<ClientAlert["type"], string> = {
   gateway_offline: "🔴",
+  gateway_offline_first: "🔴",
   task_failed: "⚡",
   channel_down: "📡",
 };
 
 const alertStyle: Record<ClientAlert["type"], string> = {
   gateway_offline: "border-[#ff385c]/20 bg-[#ff385c]/5",
+  gateway_offline_first: "border-[#ff385c]/20 bg-[#ff385c]/5",
   task_failed: "border-amber-200 bg-amber-50",
   channel_down: "border-orange-200 bg-orange-50",
 };
