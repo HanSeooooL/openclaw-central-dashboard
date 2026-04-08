@@ -84,13 +84,33 @@ echo "▸ reporter.mjs 다운로드 중..."
 curl -fsSL "$REPORTER_URL" -o "$INSTALL_DIR/reporter.mjs"
 echo "  → $INSTALL_DIR/reporter.mjs"
 
-# ── config.json 생성 ──────────────────────────────────
-GATEWAY_TOKEN_JSON="null"
-if [ -n "$GATEWAY_TOKEN" ]; then
-  GATEWAY_TOKEN_JSON="\"$GATEWAY_TOKEN\""
-fi
-
-cat > "$INSTALL_DIR/config.json" <<EOF
+# ── config.json 생성 (python3 우선, fallback heredoc) ──
+if command -v python3 &>/dev/null; then
+  SUPABASE_URL="$SUPABASE_URL" \
+  REPORTER_TOKEN="$REPORTER_TOKEN" \
+  CLIENT_ID="$CLIENT_ID" \
+  OPENCLAW_BIN="$OPENCLAW_BIN" \
+  GATEWAY_PORT="$GATEWAY_PORT" \
+  GATEWAY_TOKEN="$GATEWAY_TOKEN" \
+  python3 - > "$INSTALL_DIR/config.json" <<'PY'
+import json, os, sys
+cfg = {
+  "supabase_url": os.environ["SUPABASE_URL"],
+  "reporter_token": os.environ["REPORTER_TOKEN"],
+  "client_id": os.environ["CLIENT_ID"],
+  "openclaw_bin": os.environ["OPENCLAW_BIN"],
+  "gateway_port": int(os.environ["GATEWAY_PORT"]),
+  "gateway_token": os.environ["GATEWAY_TOKEN"] or None,
+  "health_check_interval_ms": 30000,
+  "full_scan_interval_ms": 300000,
+  "command_poll_interval_ms": 30000,
+}
+json.dump(cfg, sys.stdout, indent=2)
+PY
+else
+  GATEWAY_TOKEN_JSON="null"
+  [ -n "$GATEWAY_TOKEN" ] && GATEWAY_TOKEN_JSON="\"$GATEWAY_TOKEN\""
+  cat > "$INSTALL_DIR/config.json" <<EOF
 {
   "supabase_url": "$SUPABASE_URL",
   "reporter_token": "$REPORTER_TOKEN",
@@ -103,6 +123,7 @@ cat > "$INSTALL_DIR/config.json" <<EOF
   "command_poll_interval_ms": 30000
 }
 EOF
+fi
 # 참고: gateway_token이 null이면 ~/.openclaw/openclaw.json에서 자동 감지
 # WebSocket 연결 성공 시 이벤트 기반 모드로 동작, 실패 시 폴링 모드 사용
 # health_check_interval_ms / full_scan_interval_ms 는 폴링 fallback 설정값

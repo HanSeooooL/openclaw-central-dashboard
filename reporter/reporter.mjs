@@ -9,14 +9,35 @@
  * 설정: ~/.openclaw-reporter/config.json
  */
 
-import { execSync, exec } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import { exec, execFile, execSync } from "node:child_process";
+import { readFileSync, existsSync, accessSync, constants as fsConstants, statfsSync } from "node:fs";
 import { homedir, cpus, totalmem, freemem } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { statfsSync } from "node:fs";
+import { performance } from "node:perf_hooks";
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+const FETCH_TIMEOUT_MS = 15_000;
+const SESSIONS_CAP = 100;
+
+function monotonicNow() { return performance.now(); }
+
+/** 첫 `{` ~ 마지막 `}` 구간만 잘라 JSON.parse. 실패 시 원본으로 재시도. */
+function parseJsonLoose(raw) {
+  const s = String(raw ?? "");
+  const start = s.indexOf("{");
+  const end = s.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(s.slice(start, end + 1)); } catch {}
+  }
+  return JSON.parse(s);
+}
+
+function fetchWithTimeout(url, init = {}) {
+  return fetch(url, { ...init, signal: init.signal ?? AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+}
 
 // ─────────────────────────────────────────
 // 설정 로드
@@ -226,6 +247,10 @@ function normalizeStatus(raw) {
 // openclaw CLI 실행
 // ─────────────────────────────────────────
 
+function isExecutable(p) {
+  try { accessSync(p, fsConstants.X_OK); return true; } catch { return false; }
+}
+
 function findOpenClawBin() {
   if (openclaw_bin) return openclaw_bin;
   const candidates = [
@@ -236,51 +261,51 @@ function findOpenClawBin() {
     "/usr/local/bin/openclaw",
   ];
   for (const c of candidates) {
-    try {
-      execSync(`test -x ${c}`, { stdio: "ignore" });
-      return c;
-    } catch {}
+    if (isExecutable(c)) return c;
   }
-  // 마지막 수단: 사용자 셸의 PATH로 탐색 (launchd PATH 미포함분 커버)
+  // PATH로부터 탐색 (login shell 사용 — launchd PATH 미포함 커버)
   try {
-    const found = execSync(
-      `bash -lc 'command -v openclaw' 2>/dev/null || zsh -lc 'command -v openclaw' 2>/dev/null`,
-      { encoding: "utf-8" },
-    ).trim();
-    if (found) return found;
+    const found = execSync("bash -lc 'command -v openclaw' 2>/dev/null", { encoding: "utf-8" }).trim();
+    if (found && isExecutable(found)) return found;
   } catch {}
-  // Homebrew Cellar fallback
   try {
     const found = execSync(
-      `ls /opt/homebrew/Cellar/node/*/bin/openclaw /usr/local/Cellar/node/*/bin/openclaw 2>/dev/null | head -1`,
+      "ls /opt/homebrew/Cellar/node/*/bin/openclaw /usr/local/Cellar/node/*/bin/openclaw 2>/dev/null | head -1",
       { encoding: "utf-8" },
     ).trim();
-    if (found) return found;
+    if (found && isExecutable(found)) return found;
   } catch {}
   return "openclaw";
 }
 
+/** args: string[] — 셸을 통하지 않고 execFile로 직접 실행 (공백/따옴표 안전) */
 async function runOpenClaw(args) {
+  const argv = Array.isArray(args) ? args : String(args).trim().split(/\s+/);
+  let file, fullArgs, label;
   if (openclaw_container) {
-    const cmd = `docker exec ${openclaw_container} openclaw ${args}`;
-    const { stdout } = await execAsync(cmd, { timeout: 15000 });
-    return stdout;
+    file = "docker";
+    fullArgs = ["exec", openclaw_container, "openclaw", ...argv];
+    label = `docker exec ${openclaw_container} openclaw ${argv.join(" ")}`;
+  } else {
+    file = findOpenClawBin();
+    fullArgs = argv;
+    label = `${file} ${argv.join(" ")}`;
   }
-  const bin = findOpenClawBin();
+
   let stdout = "";
   let stderr = "";
   try {
-    const r = await execAsync(`${bin} ${args}`, { timeout: 15000 });
+    const r = await execFileAsync(file, fullArgs, { timeout: 15000, maxBuffer: 10 * 1024 * 1024 });
     stdout = r.stdout ?? "";
     stderr = r.stderr ?? "";
   } catch (e) {
     // non-zero 종료여도 stdout에 유효한 데이터가 있으면 활용
-    if (e.stdout?.trim()) return e.stdout;
-    const detail = e.stderr?.trim() ? `\n  stderr: ${e.stderr.trim()}` : "";
-    throw new Error(`openclaw 실행 실패 (bin=${bin}): ${e.message}${detail}`);
+    if (e.stdout?.toString().trim()) return e.stdout.toString();
+    const detail = e.stderr?.toString().trim() ? `\n  stderr: ${e.stderr.toString().trim()}` : "";
+    throw new Error(`openclaw 실행 실패 (${label}): ${e.message}${detail}`);
   }
   if (!stdout.trim()) {
-    throw new Error(`openclaw 빈 출력 (bin=${bin}, args=${args})${stderr.trim() ? `\n  stderr: ${stderr.trim()}` : ""}`);
+    throw new Error(`openclaw 빈 출력 (${label})${stderr.trim() ? `\n  stderr: ${stderr.trim()}` : ""}`);
   }
   return stdout;
 }
@@ -338,49 +363,83 @@ async function getSystemInfo() {
 // 스냅샷 수집 & 전송
 // ─────────────────────────────────────────
 
+let collecting = false;
+let sysInfoFailStreak = 0;
+
 async function collectAndReport() {
-  let fullStatus = null;
-  let systemInfo = null;
-
-  try {
-    const raw = await runOpenClaw("status --json");
-    fullStatus = normalizeStatus(JSON.parse(raw));
-  } catch (e) {
-    console.warn(`[Reporter] openclaw status 실패: ${e}`);
-    return;
+  if (collecting) {
+    return false;
   }
-
+  collecting = true;
   try {
-    systemInfo = await getSystemInfo();
-  } catch (e) {
-    console.warn(`[Reporter] 시스템 정보 수집 실패: ${e}`);
-  }
-
-  const totalCostUsd = estimateTotalCost(fullStatus.sessions);
-
-  try {
-    const res = await fetch(INGEST_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${reporter_token}`,
-      },
-      body: JSON.stringify({ fullStatus, systemInfo, totalCostUsd }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      console.warn(`[Reporter] ingest 실패 (${res.status}): ${text}`);
-    } else {
-      const data = await res.json();
-      console.log(`[Reporter] ✅ 스냅샷 전송 완료 (gateway: ${fullStatus.gateway_online ? "online" : "offline"}, sessions: ${fullStatus.session_count})`);
-      if (data.alerts > 0) {
-        console.log(`[Reporter] 알림 ${data.alerts}개 생성됨`);
-      }
+    let fullStatus;
+    try {
+      const raw = await runOpenClaw(["status", "--json"]);
+      fullStatus = normalizeStatus(parseJsonLoose(raw));
+    } catch (e) {
+      const snippet = typeof e?.message === "string" ? e.message.slice(0, 300) : String(e).slice(0, 300);
+      console.warn(`[Reporter] openclaw status 실패: ${snippet}`);
+      return false;
     }
-  } catch (e) {
-    console.warn(`[Reporter] 전송 실패: ${e}`);
+
+    let systemInfo = null;
+    try {
+      systemInfo = await getSystemInfo();
+      sysInfoFailStreak = 0;
+    } catch (e) {
+      sysInfoFailStreak++;
+      const msg = `[Reporter] 시스템 정보 수집 실패 (${sysInfoFailStreak}회 연속): ${e?.message ?? e}`;
+      if (sysInfoFailStreak >= 3) console.error(msg);
+      else console.warn(msg);
+    }
+
+    const totalCostUsd = estimateTotalCost(fullStatus.sessions);
+    const payload = JSON.stringify({ fullStatus, systemInfo, totalCostUsd });
+
+    // 1차 전송 + 5xx/네트워크 실패 시 5초 후 1회 재시도
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const res = await fetchWithTimeout(INGEST_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${reporter_token}`,
+          },
+          body: payload,
+        });
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          lastFullScanSuccessAt = monotonicNow();
+          console.log(`[Reporter] ✅ 스냅샷 전송 완료 (gateway: ${fullStatus.gateway_online ? "online" : "offline"}, sessions: ${fullStatus.session_count})`);
+          if (data.alerts > 0) console.log(`[Reporter] 알림 ${data.alerts}개 생성됨`);
+          return true;
+        }
+        const text = await res.text().catch(() => "");
+        console.warn(`[Reporter] ingest 실패 (${res.status})${attempt === 1 ? " → 5초 후 재시도" : ""}: ${text.slice(0, 300)}`);
+        if (res.status < 500 || attempt === 2) return false; // 4xx는 재시도 안 함
+      } catch (e) {
+        console.warn(`[Reporter] 전송 실패${attempt === 1 ? " → 5초 후 재시도" : ""}: ${e?.message ?? e}`);
+        if (attempt === 2) return false;
+      }
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+    return false;
+  } finally {
+    collecting = false;
   }
+}
+
+/** 지수 백오프 재시도 스케줄러 (30s → 1m → 3m → 10m cap) */
+let backoffTimer = null;
+const BACKOFF_SCHEDULE_MS = [30_000, 60_000, 180_000, 600_000];
+function scheduleCollectWithBackoff(attempt = 0) {
+  if (backoffTimer) clearTimeout(backoffTimer);
+  const delay = BACKOFF_SCHEDULE_MS[Math.min(attempt, BACKOFF_SCHEDULE_MS.length - 1)];
+  backoffTimer = setTimeout(async () => {
+    backoffTimer = null;
+    const ok = await collectAndReport().catch(() => false);
+    if (!ok) scheduleCollectWithBackoff(attempt + 1);
+  }, delay);
 }
 
 // ─────────────────────────────────────────
@@ -388,48 +447,70 @@ async function collectAndReport() {
 // ─────────────────────────────────────────
 
 const VALID_COMMANDS = {
-  gateway_start: "gateway start",
-  gateway_stop: "gateway stop",
-  gateway_restart: "gateway restart",
+  gateway_start:   ["gateway", "start"],
+  gateway_stop:    ["gateway", "stop"],
+  gateway_restart: ["gateway", "restart"],
 };
 
-async function pollAndExecuteCommands() {
-  let commands = [];
-  try {
-    const res = await fetch(POLL_URL, {
-      headers: { "Authorization": `Bearer ${reporter_token}` },
-    });
-    if (!res.ok) return;
-    const data = await res.json();
-    commands = data.commands ?? [];
-  } catch {
-    return;
+let pollingCommands = false;
+const processedCmdIds = new Map(); // insertion-ordered FIFO (key=id, value=timestamp)
+const PROCESSED_CAP = 500;
+
+function markProcessed(id) {
+  processedCmdIds.set(id, Date.now());
+  while (processedCmdIds.size > PROCESSED_CAP) {
+    const first = processedCmdIds.keys().next().value;
+    if (first == null) break;
+    processedCmdIds.delete(first);
   }
+}
 
-  for (const cmd of commands) {
-    const cliArgs = VALID_COMMANDS[cmd.command];
-    if (!cliArgs) {
-      await updateCommand(cmd.id, "error", `알 수 없는 명령: ${cmd.command}`);
-      continue;
-    }
-
-    console.log(`[Reporter] 명령 실행: ${cmd.command} (id=${cmd.id})`);
-    await updateCommand(cmd.id, "ack", null);
-
+async function pollAndExecuteCommands() {
+  if (pollingCommands) return;
+  pollingCommands = true;
+  try {
+    let commands = [];
     try {
-      const result = await runOpenClaw(cliArgs);
-      await updateCommand(cmd.id, "done", result.trim().slice(0, 500));
-      console.log(`[Reporter] 명령 완료: ${cmd.command}`);
-    } catch (e) {
-      await updateCommand(cmd.id, "error", String(e).slice(0, 500));
-      console.warn(`[Reporter] 명령 실패: ${cmd.command} — ${e}`);
+      const res = await fetchWithTimeout(POLL_URL, {
+        headers: { "Authorization": `Bearer ${reporter_token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      commands = data.commands ?? [];
+    } catch {
+      return;
     }
+
+    for (const cmd of commands) {
+      if (processedCmdIds.has(cmd.id)) continue;
+      const cliArgs = VALID_COMMANDS[cmd.command];
+      if (!cliArgs) {
+        markProcessed(cmd.id);
+        await updateCommand(cmd.id, "error", `알 수 없는 명령: ${cmd.command}`);
+        continue;
+      }
+
+      console.log(`[Reporter] 명령 실행: ${cmd.command} (id=${cmd.id})`);
+      markProcessed(cmd.id);
+      await updateCommand(cmd.id, "ack", null);
+
+      try {
+        const result = await runOpenClaw(cliArgs);
+        await updateCommand(cmd.id, "done", result.trim().slice(0, 500));
+        console.log(`[Reporter] 명령 완료: ${cmd.command}`);
+      } catch (e) {
+        await updateCommand(cmd.id, "error", String(e?.message ?? e).slice(0, 500));
+        console.warn(`[Reporter] 명령 실패: ${cmd.command} — ${e?.message ?? e}`);
+      }
+    }
+  } finally {
+    pollingCommands = false;
   }
 }
 
 async function updateCommand(id, status, result) {
   try {
-    await fetch(UPDATE_URL, {
+    await fetchWithTimeout(UPDATE_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -438,7 +519,7 @@ async function updateCommand(id, status, result) {
       body: JSON.stringify({ id, status, result }),
     });
   } catch (e) {
-    console.warn(`[Reporter] 명령 상태 업데이트 실패: ${e}`);
+    console.warn(`[Reporter] 명령 상태 업데이트 실패: ${e?.message ?? e}`);
   }
 }
 
@@ -446,11 +527,13 @@ async function updateCommand(id, status, result) {
 // WebSocket 이벤트 기반 게이트웨이 연결
 // ─────────────────────────────────────────
 
-let lastFullScanAt = 0;
-let wsMode = false;        // WebSocket 모드 활성 여부
+let lastFullScanAt = 0;           // 마지막 시도 (monotonic ms)
+let lastFullScanSuccessAt = 0;    // 마지막 성공 (monotonic ms)
+let wsMode = false;
 let wsReconnectTimer = null;
 let scanDebounceTimer = null;
-let wsLastHealthOk = null; // health 이벤트 상태 추적 (변경 시에만 스캔)
+let wsLastHealthOk = null;
+const wsPendingReqs = new Map();  // id → { method }
 
 const WS_RECONNECT_MS = 15_000;
 const WS_SCAN_DEBOUNCE_MS = 30_000;  // 이벤트 폭주 방지: 30초 내 연속 이벤트는 하나로 병합
@@ -464,11 +547,13 @@ function triggerScanDebounced(reason) {
   if (scanDebounceTimer) return; // 이미 예약됨
   scanDebounceTimer = setTimeout(async () => {
     scanDebounceTimer = null;
-    const now = Date.now();
-    if (now - lastFullScanAt < WS_SCAN_DEBOUNCE_MS) return; // 너무 빠른 연속 호출 방지
+    const now = monotonicNow();
+    if (now - lastFullScanAt < WS_SCAN_DEBOUNCE_MS) return;
     console.log(`[Reporter] 이벤트 트리거 (${reason}) → 스냅샷 수집`);
     lastFullScanAt = now;
-    await collectAndReport();
+    await collectAndReport().catch((e) =>
+      console.warn(`[Reporter] 이벤트 트리거 수집 실패: ${e?.message ?? e}`)
+    );
   }, WS_SCAN_DEBOUNCE_MS);
 }
 
@@ -530,17 +615,13 @@ async function connectGatewayWebSocket() {
       // ── 핸드쉐이크 ──
       if (msg.event === "connect.challenge") {
         const reqId = nextReqId();
+        wsPendingReqs.set(reqId, { method: "connect" });
         ws.send(JSON.stringify({
           type: "req",
           id: reqId,
           method: "connect",
           params: {
-            client: {
-              id: "cli",
-              mode: "backend",
-              version: "1.0.0",
-              platform: process.platform,
-            },
+            client: { id: "cli", mode: "backend", version: "1.0.0", platform: process.platform },
             minProtocol: 3,
             maxProtocol: 3,
             role: "operator",
@@ -551,40 +632,51 @@ async function connectGatewayWebSocket() {
         return;
       }
 
-      // ── 인증 응답 ──
-      if (msg.type === "res" && msg.ok === true && !wsMode) {
-        clearTimeout(authTimeout);
-        wsMode = true;
-        console.log("[Reporter] ✅ WebSocket 인증 성공 → 이벤트 기반 모드");
-        resolveOnce(true);
+      // ── req/res 매칭 ──
+      if (msg.type === "res" && msg.id != null && wsPendingReqs.has(String(msg.id))) {
+        const pending = wsPendingReqs.get(String(msg.id));
+        wsPendingReqs.delete(String(msg.id));
 
-        // 세션 이벤트 구독
-        ws.send(JSON.stringify({
-          type: "req",
-          id: nextReqId(),
-          method: "sessions.subscribe",
-          params: {},
-        }));
+        if (pending.method === "connect") {
+          if (msg.ok === true) {
+            clearTimeout(authTimeout);
+            wsMode = true;
+            console.log("[Reporter] ✅ WebSocket 인증 성공 → 이벤트 기반 모드");
+            resolveOnce(true);
 
-        // 즉시 첫 스캔 (실패해도 핸들러가 silent로 죽지 않도록 try/catch)
-        lastFullScanAt = Date.now();
-        try {
-          await collectAndReport();
-        } catch (e) {
-          console.warn(`[Reporter] 초기 스냅샷 실패: ${e?.message ?? e} → 30초 후 재시도`);
-          setTimeout(() => collectAndReport().catch((err) =>
-            console.warn(`[Reporter] 재시도 실패: ${err?.message ?? err}`)
-          ), 30000);
+            // 세션 이벤트 구독
+            const subId = nextReqId();
+            wsPendingReqs.set(subId, { method: "sessions.subscribe" });
+            ws.send(JSON.stringify({
+              type: "req",
+              id: subId,
+              method: "sessions.subscribe",
+              params: {},
+            }));
+
+            // 즉시 첫 스캔 + 실패 시 지수 백오프 재시도
+            lastFullScanAt = monotonicNow();
+            const ok = await collectAndReport().catch((e) => {
+              console.warn(`[Reporter] 초기 스냅샷 예외: ${e?.message ?? e}`);
+              return false;
+            });
+            if (!ok) {
+              console.warn("[Reporter] 초기 스냅샷 실패 → 백오프 재시도 시작 (30s → 1m → 3m → 10m)");
+              scheduleCollectWithBackoff(0);
+            }
+          } else {
+            clearTimeout(authTimeout);
+            const errMsg = msg.error?.message ?? "unknown error";
+            console.warn(`[Reporter] WebSocket 인증 실패: ${errMsg} → 폴링 모드`);
+            ws.close();
+            resolveOnce(false);
+          }
+          return;
         }
-        return;
-      }
 
-      if (msg.type === "res" && msg.ok === false && !wsMode) {
-        clearTimeout(authTimeout);
-        const errMsg = msg.error?.message ?? "unknown error";
-        console.warn(`[Reporter] WebSocket 인증 실패: ${errMsg} → 폴링 모드`);
-        ws.close();
-        resolveOnce(false);
+        if (pending.method === "sessions.subscribe" && msg.ok === false) {
+          console.warn(`[Reporter] sessions.subscribe 실패: ${msg.error?.message ?? "unknown"}`);
+        }
         return;
       }
 
@@ -613,6 +705,7 @@ async function connectGatewayWebSocket() {
     ws.addEventListener("close", (event) => {
       const wasMode = wsMode;
       wsMode = false;
+      wsPendingReqs.clear();
       clearTimeout(authTimeout);
       resolveOnce(false);
 
@@ -655,13 +748,13 @@ async function checkGatewayHealth() {
 }
 
 async function healthLoop() {
-  if (wsMode) return; // WebSocket 모드면 폴링 불필요
+  if (wsMode) return;
 
   const healthOk = await checkGatewayHealth();
-  const now = Date.now();
-
+  const now = monotonicNow();
   const healthChanged = lastHealthOk !== null && healthOk !== lastHealthOk;
-  const heartbeatDue = now - lastFullScanAt >= full_scan_interval_ms;
+  // 마지막 "성공" 기준으로 heartbeat 판단 → 실패가 쌓여도 계속 재시도됨
+  const heartbeatDue = now - lastFullScanSuccessAt >= full_scan_interval_ms;
 
   if (healthChanged || heartbeatDue) {
     if (healthChanged) {
@@ -671,20 +764,20 @@ async function healthLoop() {
     }
     lastHealthOk = healthOk;
     lastFullScanAt = now;
-    await collectAndReport();
+    await collectAndReport().catch((e) => console.warn(`[Reporter] heartbeat 수집 실패: ${e?.message ?? e}`));
   } else {
     lastHealthOk = healthOk;
   }
 }
 
-// WS 모드에서도 10분마다 안전망 스캔 (이벤트 누락 방지)
+// WS 모드에서도 안전망 스캔 (이벤트 누락 방지) — 마지막 성공 기준
 async function wsHeartbeatLoop() {
   if (!wsMode) return;
-  const now = Date.now();
-  if (now - lastFullScanAt >= WS_HEARTBEAT_INTERVAL_MS) {
+  const now = monotonicNow();
+  if (now - lastFullScanSuccessAt >= WS_HEARTBEAT_INTERVAL_MS) {
     console.log("[Reporter] WS 안전망 heartbeat → 풀 스캔");
     lastFullScanAt = now;
-    await collectAndReport();
+    await collectAndReport().catch((e) => console.warn(`[Reporter] WS heartbeat 수집 실패: ${e?.message ?? e}`));
   }
 }
 
@@ -705,15 +798,23 @@ if (gateway_token) {
   const wsOk = await connectGatewayWebSocket();
   if (!wsOk) {
     console.log(`[Reporter] 폴링 모드로 전환 (헬스체크: ${health_check_interval_ms / 1000}s, 풀스캔: ${full_scan_interval_ms / 1000}s)`);
-    await collectAndReport().catch((e) => console.warn(`[Reporter] 초기 수집 실패: ${e?.message ?? e}`));
-    lastFullScanAt = Date.now();
+    lastFullScanAt = monotonicNow();
+    const ok = await collectAndReport().catch((e) => {
+      console.warn(`[Reporter] 초기 수집 예외: ${e?.message ?? e}`);
+      return false;
+    });
+    if (!ok) scheduleCollectWithBackoff(0);
   } else {
     console.log(`[Reporter] WebSocket 이벤트 기반 모드 활성 (안전망: ${WS_HEARTBEAT_INTERVAL_MS / 1000}s)`);
   }
 } else {
   console.log(`[Reporter] 폴링 모드 (헬스체크: ${health_check_interval_ms / 1000}s, 풀스캔: ${full_scan_interval_ms / 1000}s)`);
-  await collectAndReport().catch((e) => console.warn(`[Reporter] 초기 수집 실패: ${e?.message ?? e}`));
-  lastFullScanAt = Date.now();
+  lastFullScanAt = monotonicNow();
+  const ok = await collectAndReport().catch((e) => {
+    console.warn(`[Reporter] 초기 수집 예외: ${e?.message ?? e}`);
+    return false;
+  });
+  if (!ok) scheduleCollectWithBackoff(0);
 }
 
 // 명령 폴링 즉시 시작

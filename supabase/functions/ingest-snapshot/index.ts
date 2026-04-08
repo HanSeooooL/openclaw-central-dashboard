@@ -48,6 +48,14 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "fullStatus required" }), { status: 400, headers: corsHeaders });
     }
 
+    // sessions cap — Edge Function 페이로드/jsonb 폭증 방어
+    const SESSIONS_CAP = 100;
+    if (Array.isArray(fullStatus.sessions) && fullStatus.sessions.length > SESSIONS_CAP) {
+      fullStatus.sessions_truncated = true;
+      fullStatus.sessions_original_count = fullStatus.sessions.length;
+      fullStatus.sessions = fullStatus.sessions.slice(0, SESSIONS_CAP);
+    }
+
     // 최신 스냅샷 조회 (알림 비교용)
     const { data: prevSnaps } = await supabase
       .from("snapshots")
@@ -93,7 +101,17 @@ Deno.serve(async (req) => {
       });
     }
 
+    // 최초 스냅샷이 offline이면 "처음부터 오프라인" 알림 1회
+    if (!prevSnap && fullStatus.gateway_online === false) {
+      alerts.push({
+        client_id: clientId,
+        type: "gateway_offline_first",
+        message: "최초 등록 시점에 게이트웨이가 오프라인 상태입니다.",
+      });
+    }
+
     // 태스크 실패 증가
+    // 주의: 게이트웨이 재시작 등으로 카운터가 감소하면 delta가 음수가 되어 알림이 생성되지 않음 (의도)
     if (prevSnap && fullStatus.tasks?.failed > (prevSnap.tasks_failed ?? 0)) {
       const delta = fullStatus.tasks.failed - (prevSnap.tasks_failed ?? 0);
       alerts.push({
