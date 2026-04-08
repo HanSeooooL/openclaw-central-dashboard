@@ -59,12 +59,13 @@ Deno.serve(async (req) => {
     // 최신 스냅샷 조회 (알림 비교용)
     const { data: prevSnaps } = await supabase
       .from("snapshots")
-      .select("gateway_online, tasks_failed, full_status")
+      .select("ts, gateway_online, tasks_failed, full_status")
       .eq("client_id", clientId)
       .order("ts", { ascending: false })
       .limit(1);
 
     const prevSnap = prevSnaps?.[0] ?? null;
+    const prevTsMs = prevSnap?.ts ? new Date(prevSnap.ts).getTime() : 0;
 
     // 세션 총 토큰 계산
     const sessions = Array.isArray(fullStatus.sessions) ? fullStatus.sessions : [];
@@ -135,11 +136,29 @@ Deno.serve(async (req) => {
     // 주의: 게이트웨이 재시작 등으로 카운터가 감소하면 delta가 음수가 되어 알림이 생성되지 않음 (의도)
     if (prevSnap && fullStatus.tasks?.failed > (prevSnap.tasks_failed ?? 0)) {
       const delta = fullStatus.tasks.failed - (prevSnap.tasks_failed ?? 0);
+      // 이번 스냅샷의 failed_tasks 중 이전 스냅샷 이후에 종료된 것만 추려 알림에 붙임
+      const recentFailed = Array.isArray(fullStatus.failed_tasks)
+        ? fullStatus.failed_tasks.filter(
+            (t: { ended_at?: number | null }) =>
+              typeof t.ended_at === "number" && t.ended_at > prevTsMs
+          )
+        : [];
+      const firstLabels = recentFailed
+        .map((t: { label?: string | null }) => t.label)
+        .filter(Boolean)
+        .slice(0, 3)
+        .join(", ");
+      const msgHead = `태스크 ${delta}개 실패 (누적 ${fullStatus.tasks.failed}개)`;
+      const message = firstLabels ? `${msgHead} — ${firstLabels}` : msgHead;
       alerts.push({
         client_id: clientId,
         type: "task_failed",
-        message: `태스크 ${delta}개 실패 (누적 ${fullStatus.tasks.failed}개)`,
-        metadata: buildMeta({ tasks_failed_delta: delta, tasks_failed_total: fullStatus.tasks.failed }),
+        message,
+        metadata: buildMeta({
+          tasks_failed_delta: delta,
+          tasks_failed_total: fullStatus.tasks.failed,
+          failed_tasks: recentFailed.length > 0 ? recentFailed : fullStatus.failed_tasks ?? null,
+        }),
       });
     }
 

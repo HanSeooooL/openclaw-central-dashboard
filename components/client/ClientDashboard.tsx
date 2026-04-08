@@ -1,11 +1,60 @@
 "use client";
 
+import { useState } from "react";
 import StatusHero from "./StatusHero";
 import KpiStrip from "./KpiStrip";
 import UnifiedTimeline from "./UnifiedTimeline";
 import HotSessions from "./HotSessions";
 import IncidentFeed from "./IncidentFeed";
-import type { FullStatus, SystemInfo, Snapshot } from "@/lib/types";
+import type { FullStatus, SystemInfo, Snapshot, FailedTaskInfo } from "@/lib/types";
+
+function formatRelative(ms: number | null): string {
+  if (!ms) return "—";
+  const diff = Date.now() - ms;
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}초 전`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}분 전`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}시간 전`;
+  return new Date(ms).toLocaleDateString("ko-KR");
+}
+
+function FailedTasksList({ items }: { items: FailedTaskInfo[] }) {
+  return (
+    <div className="mt-3 pt-3 border-t border-border-light space-y-2">
+      <p className="text-[10px] font-semibold text-secondary uppercase tracking-wide">
+        최근 실패 ({items.length})
+      </p>
+      {items.map((ft, i) => (
+        <div
+          key={`${ft.task_id ?? i}-${i}`}
+          className="border-l-2 border-[#ff385c]/40 pl-2.5"
+        >
+          <div className="flex items-baseline justify-between gap-2 flex-wrap">
+            <span className="text-xs font-semibold text-nearblack">
+              {ft.label ?? ft.task_id ?? "(이름 없음)"}
+            </span>
+            <span className="text-[9px] text-secondary tabular-nums">
+              {ft.runtime ?? ""}
+              {ft.ended_at ? ` · ${formatRelative(ft.ended_at)}` : ""}
+            </span>
+          </div>
+          {ft.error && (
+            <p className="text-[10px] text-rausch font-mono mt-0.5 break-all whitespace-pre-wrap">
+              {ft.error}
+            </p>
+          )}
+          {ft.terminal_summary && (
+            <p className="text-[10px] text-secondary italic mt-0.5">
+              {ft.terminal_summary}
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────
 // 메인 대시보드
@@ -21,6 +70,9 @@ interface ClientDashboardProps {
 
 export default function ClientDashboard({ clientId, status, systemInfo, snapshots, loading }: ClientDashboardProps) {
   void systemInfo;
+  const [showFailures, setShowFailures] = useState(false);
+  const failedItems = (status.failed_tasks ?? []) as FailedTaskInfo[];
+
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6 max-w-6xl mx-auto">
       {/* 헤더 */}
@@ -104,8 +156,22 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
                     {status.tasks.succeeded}
                   </p>
                 </div>
-                <div>
-                  <p className="text-[10px] text-secondary font-medium uppercase tracking-wide">실패</p>
+                <button
+                  type="button"
+                  onClick={() => failedItems.length > 0 && setShowFailures((v) => !v)}
+                  disabled={failedItems.length === 0}
+                  className={`text-left ${
+                    failedItems.length > 0 ? "cursor-pointer hover:opacity-80" : "cursor-default"
+                  }`}
+                >
+                  <p className="text-[10px] text-secondary font-medium uppercase tracking-wide">
+                    실패
+                    {failedItems.length > 0 && (
+                      <span className="ml-1 text-[9px] text-rausch">
+                        {showFailures ? "▼" : "▶"}
+                      </span>
+                    )}
+                  </p>
                   <p
                     className={`text-2xl font-bold mt-0.5 tabular-nums ${
                       status.tasks.failed > 0 ? "text-rausch" : "text-nearblack"
@@ -114,7 +180,7 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
                   >
                     {status.tasks.failed}
                   </p>
-                </div>
+                </button>
               </div>
               <div className="mt-4 pt-3 border-t border-border-light text-xs text-secondary space-y-1">
                 <div className="flex justify-between">
@@ -132,6 +198,10 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
                   </div>
                 )}
               </div>
+
+              {showFailures && failedItems.length > 0 && (
+                <FailedTasksList items={failedItems} />
+              )}
             </div>
           </div>
 

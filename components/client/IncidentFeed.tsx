@@ -61,8 +61,22 @@ function hasMetaContent(meta: AlertMetadata | null): boolean {
       meta.cpu_usage != null ||
       meta.memory_percent != null ||
       meta.disk_percent != null ||
-      meta.gateway_uptime
+      meta.gateway_uptime ||
+      (Array.isArray(meta.failed_tasks) && meta.failed_tasks.length > 0)
   );
+}
+
+function formatTaskTime(ms: number | null): string {
+  if (!ms) return "—";
+  const diff = Date.now() - ms;
+  if (diff < 0) return "방금";
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}초 전`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}분 전`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}시간 전`;
+  return new Date(ms).toLocaleDateString("ko-KR");
 }
 
 function IncidentRow({ alert }: { alert: ClientAlert }) {
@@ -154,6 +168,40 @@ function IncidentRow({ alert }: { alert: ClientAlert }) {
                   </pre>
                 </div>
               ))}
+
+              {/* 실패 태스크 상세 */}
+              {Array.isArray(meta.failed_tasks) && meta.failed_tasks.length > 0 && (
+                <div className="bg-white/60 rounded p-2 space-y-2">
+                  <p className="text-[9px] text-secondary font-mono font-semibold uppercase">
+                    실패 태스크 ({meta.failed_tasks.length})
+                  </p>
+                  {meta.failed_tasks.map((ft, i) => (
+                    <div
+                      key={`${ft.task_id ?? i}-${i}`}
+                      className="border-l-2 border-[#ff385c]/40 pl-2"
+                    >
+                      <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                        <span className="text-[11px] font-semibold text-nearblack">
+                          {ft.label ?? ft.task_id ?? "(이름 없음)"}
+                        </span>
+                        <span className="text-[9px] text-secondary tabular-nums">
+                          {ft.runtime ?? ""} {ft.ended_at ? `· ${formatTaskTime(ft.ended_at)}` : ""}
+                        </span>
+                      </div>
+                      {ft.error && (
+                        <pre className="text-[10px] text-rausch font-mono whitespace-pre-wrap break-all mt-1">
+                          {ft.error}
+                        </pre>
+                      )}
+                      {ft.terminal_summary && (
+                        <p className="text-[10px] text-secondary mt-1 italic">
+                          {ft.terminal_summary}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

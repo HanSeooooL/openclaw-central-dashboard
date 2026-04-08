@@ -38,6 +38,16 @@ export interface TaskSummary {
   timed_out: number;
 }
 
+export interface FailedTaskInfo {
+  task_id: string | null;
+  label: string | null;
+  runtime: string | null;
+  started_at: number | null;
+  ended_at: number | null;
+  error: string | null;
+  terminal_summary: string | null;
+}
+
 export interface HeartbeatAgent {
   agent_id: string;
   enabled: boolean;
@@ -72,6 +82,8 @@ export interface FullStatus {
   debug_status_error: string | null;
   debug_health_error: string | null;
   debug_gateway_error: string | null;
+  /** Reporter 가 `openclaw tasks list --status failed` 로 수집한 최근 실패 태스크 상세 (최대 10개) */
+  failed_tasks?: FailedTaskInfo[];
 }
 
 export interface SystemInfo {
@@ -123,6 +135,7 @@ export interface AlertMetadata {
   disk_percent?: number | null;
   channel_name?: string | null;
   tasks_failed_delta?: number | null;
+  failed_tasks?: FailedTaskInfo[];
   [key: string]: unknown;
 }
 

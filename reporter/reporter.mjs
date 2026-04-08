@@ -465,6 +465,32 @@ async function collectAndReport() {
       return false;
     }
 
+    // 실패 태스크 상세 — best-effort. tasks list 가 실패해도 스냅샷 자체는 계속 전송.
+    try {
+      const raw = await runOpenClaw(["tasks", "list", "--json", "--status", "failed"]);
+      const parsed = parseJsonLoose(raw);
+      const items = Array.isArray(parsed?.tasks) ? parsed.tasks : [];
+      // endedAt 내림차순으로 최근 10건만 — 페이로드 보호
+      const sorted = items
+        .slice()
+        .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
+        .slice(0, 10);
+      fullStatus.failed_tasks = sorted.map((t) => ({
+        task_id: t.taskId ?? null,
+        label: t.label ?? t.task ?? null,
+        runtime: t.runtime ?? null,
+        started_at: t.startedAt ?? null,
+        ended_at: t.endedAt ?? null,
+        error: typeof t.error === "string" ? t.error.slice(0, 1000) : null,
+        terminal_summary:
+          typeof t.terminalSummary === "string" ? t.terminalSummary.slice(0, 500) : null,
+      }));
+    } catch (e) {
+      // 실패해도 스냅샷은 계속 진행
+      const snippet = typeof e?.message === "string" ? e.message.slice(0, 200) : String(e).slice(0, 200);
+      console.warn(`[Reporter] openclaw tasks list 실패(무시): ${snippet}`);
+    }
+
     let systemInfo = null;
     try {
       systemInfo = await getSystemInfo();
