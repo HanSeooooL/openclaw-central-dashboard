@@ -657,7 +657,7 @@ async function collectRecentLogs({ force = false, logFilePathHint = null } = {})
 // Reporter 자체 진단 state (24h 카운터 + 마지막 에러)
 // ─────────────────────────────────────────
 
-const REPORTER_VERSION = "2026.4.9-auto-update";
+const REPORTER_VERSION = "2026.4.9.1-selfupdate-smoke";
 
 // ─────────────────────────────────────────
 // 자동 업데이트 — 중앙에서 새 reporter.mjs 를 받아 자체 교체 + 재시작
