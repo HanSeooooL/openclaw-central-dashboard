@@ -594,14 +594,43 @@ async function collectHealthProbe({ force = false } = {}) {
   return { value: normalized, error: null };
 }
 
-/** 최근 gateway 로그 WARN/ERROR tail. 로그파일 직접 tail (WS RPC 는 hang 위험으로 제외). */
+/** 최근 gateway 로그 WARN/ERROR tail. WS RPC 우선, 실패 시 로그파일 직접 읽기. */
 async function collectRecentLogs({ force = false, logFilePathHint = null } = {}) {
   const now = Date.now();
   if (!force && diagCache.recentLogs.value && diagCache.recentLogs.expiresAt > now) {
     return { value: diagCache.recentLogs.value };
   }
+  // 1) WS RPC 경로 (8s 자체 타임아웃으로 hang 방어)
   let lines = null;
-  if (logFilePathHint) {
+  try {
+    const raw = await withTimeout(
+      runOpenClaw(["logs", "--json", "--limit", "120", "--max-bytes", "250000"]),
+      8000,
+      "openclaw logs",
+    );
+    const text = String(raw || "");
+    const out = [];
+    for (const ln of text.split("\n")) {
+      const s = ln.trim();
+      if (!s) continue;
+      let obj;
+      try { obj = JSON.parse(s); } catch { continue; }
+      if (obj?.type !== "log") continue;
+      const level = String(obj.level ?? "").toUpperCase();
+      if (level !== "WARN" && level !== "ERROR") continue;
+      out.push({
+        ts: obj.time ?? new Date().toISOString(),
+        level,
+        subsystem: obj.subsystem ?? null,
+        message: String(obj.message ?? "").slice(0, 500),
+      });
+    }
+    if (out.length > 0) lines = out.slice(-40);
+  } catch {
+    // WS RPC 실패/타임아웃 → fallback
+  }
+  // 2) 로그파일 직접 tail fallback
+  if (!lines && logFilePathHint) {
     lines = readRecentLogLinesFromFile(logFilePathHint, { maxLines: 40 });
   }
   if (lines) {
