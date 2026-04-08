@@ -1,109 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from "recharts";
 import ResourceBar from "@/components/shared/ResourceBar";
 import StatusHero from "./StatusHero";
 import KpiStrip from "./KpiStrip";
+import UnifiedTimeline from "./UnifiedTimeline";
 import type { FullStatus, SystemInfo, Snapshot } from "@/lib/types";
-
-// ─────────────────────────────────────────
-// 추세 차트
-// ─────────────────────────────────────────
-
-const PERIOD_OPTIONS = [
-  { label: "1h", hours: 1 },
-  { label: "6h", hours: 6 },
-  { label: "24h", hours: 24 },
-  { label: "7d", hours: 168 },
-];
-
-function formatTs(ts: string, hours: number): string {
-  const d = new Date(ts);
-  if (hours <= 6) return d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-  if (hours <= 48) return d.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  return d.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
-}
-
-interface TrendChartsProps {
-  clientId: string;
-  allSnapshots: Snapshot[];
-}
-
-function TrendCharts({ clientId, allSnapshots }: TrendChartsProps) {
-  const [periodIdx, setPeriodIdx] = useState(1);
-  const { hours, label } = PERIOD_OPTIONS[periodIdx];
-
-  const cutoff = Date.now() - hours * 3600 * 1000;
-  const snapshots = allSnapshots.filter((s) => new Date(s.ts).getTime() >= cutoff);
-
-  const chartData = snapshots.map((s) => ({
-    time: formatTs(s.ts, hours),
-    tokens: Math.round(s.total_tokens / 1000),
-    cost: parseFloat((s.total_cost_usd * 100).toFixed(4)),
-    latency: s.gateway_latency_ms ?? null,
-    sessions: s.session_count,
-  }));
-
-  const isEmpty = chartData.length < 2;
-
-  return (
-    <div className="bg-white shadow-card rounded-card p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-nearblack">사용량 추세</h3>
-        <div className="flex bg-surface rounded-lg p-1 gap-0.5">
-          {PERIOD_OPTIONS.map((opt, i) => (
-            <button
-              key={opt.label}
-              onClick={() => setPeriodIdx(i)}
-              className={`px-3 py-1 text-xs rounded-md transition-all font-medium ${
-                i === periodIdx ? "bg-rausch text-white" : "text-secondary hover:text-nearblack"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {isEmpty ? (
-        <div className="flex flex-col items-center justify-center h-40 text-secondary text-xs space-y-2">
-          <span className="text-2xl">📊</span>
-          <p>{label} 기간 내 데이터가 부족합니다</p>
-          <p className="text-[10px] text-[#c1c1c1]">세션 변화 시 스냅샷이 수집됩니다</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-          {[
-            { key: "tokens", label: "토큰 사용량 (k)", color: "#ff385c", unit: "k" },
-            { key: "cost", label: "추정 비용 (¢)", color: "#c8a000", unit: "¢" },
-            { key: "latency", label: "게이트웨이 레이턴시 (ms)", color: "#10b981", unit: "ms", connectNulls: true },
-            { key: "sessions", label: "활성 세션 수", color: "#8b5cf6", unit: "개" },
-          ].map(({ key, label, color, unit, connectNulls }) => (
-            <div key={key}>
-              <p className="text-[10px] text-secondary mb-2 font-medium">{label}</p>
-              <ResponsiveContainer width="100%" height={140}>
-                <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f2f2f2" />
-                  <XAxis dataKey="time" tick={{ fontSize: 9, fill: "#6a6a6a" }} interval="preserveStartEnd" />
-                  <YAxis tick={{ fontSize: 9, fill: "#6a6a6a" }} width={32} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "#ffffff", border: "1px solid #e8e8e8", borderRadius: 12, fontSize: 11, boxShadow: "rgba(0,0,0,0.04) 0px 2px 6px, rgba(0,0,0,0.1) 0px 4px 8px" }}
-                    labelStyle={{ color: "#6a6a6a" }}
-                    formatter={(v) => [`${v}${unit}`, label.split(" ")[0]]}
-                  />
-                  <Line type="monotone" dataKey={key} stroke={color} strokeWidth={1.5} dot={false} connectNulls={connectNulls} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────
 // 메인 대시보드
@@ -151,6 +52,9 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
 
       {/* Layer 2 — KPI Strip */}
       {!loading && <KpiStrip snapshots={snapshots} />}
+
+      {/* Layer 3 — Unified Timeline */}
+      {!loading && <UnifiedTimeline snapshots={snapshots} />}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         {/* 시스템 리소스 */}
@@ -225,8 +129,6 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
         </div>
       </div>
 
-      {/* 추세 차트 */}
-      <TrendCharts clientId={clientId} allSnapshots={snapshots} />
     </div>
   );
 }
