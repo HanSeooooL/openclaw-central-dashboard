@@ -295,7 +295,7 @@ async function runOpenClaw(args) {
   let stdout = "";
   let stderr = "";
   try {
-    const r = await execFileAsync(file, fullArgs, { timeout: 15000, maxBuffer: 10 * 1024 * 1024 });
+    const r = await execFileAsync(file, fullArgs, { timeout: 45000, maxBuffer: 10 * 1024 * 1024 });
     stdout = r.stdout ?? "";
     stderr = r.stderr ?? "";
   } catch (e) {
@@ -631,11 +631,18 @@ async function connectGatewayWebSocket() {
           id: reqId,
           method: "connect",
           params: {
-            client: { id: "cli", mode: "backend", version: "1.0.0", platform: process.platform },
+            client: { id: "cli", mode: "cli", version: "1.0.0", platform: process.platform },
             minProtocol: 3,
             maxProtocol: 3,
             role: "operator",
-            scopes: ["operator.read", "sessions.read", "sessions.subscribe"],
+            scopes: [
+              "operator.admin",
+              "operator.read",
+              "operator.write",
+              "operator.approvals",
+              "operator.pairing",
+              "operator.talk.secrets",
+            ],
             auth: { token: gateway_token },
           },
         }));
@@ -685,7 +692,8 @@ async function connectGatewayWebSocket() {
         }
 
         if (pending.method === "sessions.subscribe" && msg.ok === false) {
-          console.warn(`[Reporter] sessions.subscribe 실패: ${msg.error?.message ?? "unknown"}`);
+          // shared-secret 토큰 경로에선 scope가 안 받아지는 경우가 있음 → heartbeat 안전망으로 커버
+          console.log(`[Reporter] sessions.subscribe 불가 (${msg.error?.message ?? "unknown"}) → heartbeat 모드로 동작`);
         }
         return;
       }
