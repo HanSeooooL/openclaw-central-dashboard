@@ -647,7 +647,7 @@ async function collectAndReport() {
       fullStatus = normalizeStatus(parseJsonLoose(raw));
     } catch (e) {
       const snippet = typeof e?.message === "string" ? e.message.slice(0, 300) : String(e).slice(0, 300);
-      console.warn(`[Reporter] openclaw status 실패: ${snippet}`);
+      console.log(`[Reporter] ❌ openclaw status 실패 → 스냅샷 전송 스킵: ${snippet}`);
       return false;
     }
 
