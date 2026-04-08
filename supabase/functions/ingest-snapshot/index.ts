@@ -212,11 +212,27 @@ Deno.serve(async (req) => {
       const fresh = alerts.filter((a) => !recentTypes.has(a.type));
 
       if (fresh.length > 0) {
-        const { error: alertError } = await supabase.from("alerts").insert(fresh);
+        const { data: insertedRows, error: alertError } = await supabase
+          .from("alerts")
+          .insert(fresh)
+          .select("id, client_id, type, message, ts, metadata");
         if (alertError) {
           console.error("[ingest] alerts insert failed", alertError, JSON.stringify(fresh));
         } else {
-          inserted = fresh.length;
+          inserted = insertedRows?.length ?? 0;
+          // dispatch-alert 비동기 fire-and-forget — 이메일/Slack 발송은 ingest 응답 지연시키지 않음
+          const dispatchUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/dispatch-alert`;
+          const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+          for (const row of insertedRows ?? []) {
+            fetch(dispatchUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${serviceKey}`,
+              },
+              body: JSON.stringify({ record: row }),
+            }).catch((e) => console.error("[ingest] dispatch-alert call failed", e));
+          }
         }
       }
     }

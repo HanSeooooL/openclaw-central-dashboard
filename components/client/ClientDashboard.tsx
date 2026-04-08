@@ -6,6 +6,7 @@ import KpiStrip from "./KpiStrip";
 import UnifiedTimeline from "./UnifiedTimeline";
 import HotSessions from "./HotSessions";
 import IncidentFeed from "./IncidentFeed";
+import NotificationSettings from "./NotificationSettings";
 import type { FullStatus, SystemInfo, Snapshot, FailedTaskInfo } from "@/lib/types";
 
 function formatRelative(ms: number | null): string {
@@ -207,6 +208,9 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
 
           {/* Layer 5 — Incident Feed */}
           <IncidentFeed clientId={clientId} />
+
+          {/* 설정 */}
+          <NotificationSettings clientId={clientId} />
         </>
       )}
     </div>
