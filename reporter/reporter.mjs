@@ -12,7 +12,7 @@
 import { exec, execFile, execSync } from "node:child_process";
 import { readFileSync, existsSync, accessSync, constants as fsConstants, statfsSync, openSync, fstatSync, readSync, closeSync } from "node:fs";
 import { homedir, cpus, totalmem, freemem } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { promisify } from "node:util";
 import { performance } from "node:perf_hooks";
 import { createPrivateKey, createPublicKey, sign as cryptoSign, randomBytes } from "node:crypto";
@@ -368,7 +368,12 @@ async function runOpenClaw(args) {
   let stdout = "";
   let stderr = "";
   try {
-    const r = await execFileAsync(file, fullArgs, { timeout: 45000, maxBuffer: 10 * 1024 * 1024 });
+    // openclaw 스크립트의 `#!/usr/bin/env node` 쉬뱅이 launchd/systemd PATH 에서
+    // node 를 못 찾아 exit 127 로 죽는 문제 방지: 현재 reporter 를 띄운 node 의
+    // 디렉터리를 PATH 앞에 prepend.
+    const nodeDir = dirname(process.execPath);
+    const env = { ...process.env, PATH: `${nodeDir}:${process.env.PATH ?? ""}` };
+    const r = await execFileAsync(file, fullArgs, { timeout: 45000, maxBuffer: 10 * 1024 * 1024, env });
     stdout = r.stdout ?? "";
     stderr = r.stderr ?? "";
   } catch (e) {
