@@ -4,11 +4,9 @@ import { useState } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import StatusCard from "@/components/shared/StatusCard";
 import ResourceBar from "@/components/shared/ResourceBar";
-import ClientHealthOverview from "./ClientHealthOverview";
 import StatusHero from "./StatusHero";
-import { totalCost, formatCost } from "@/lib/costCalculator";
+import KpiStrip from "./KpiStrip";
 import type { FullStatus, SystemInfo, Snapshot } from "@/lib/types";
 
 // ─────────────────────────────────────────
@@ -135,24 +133,10 @@ function TokenBar({ percent, tokens }: { percent: number; tokens: number }) {
 }
 
 export default function ClientDashboard({ clientId, status, systemInfo, snapshots, loading }: ClientDashboardProps) {
-  const totalTokens = status.sessions.reduce((s, sess) => s + sess.total_tokens, 0);
-  const estimatedTotal = totalCost(status.sessions);
-
-  const byModel: Record<string, number> = {};
-  for (const s of status.sessions) {
-    byModel[s.model] = (byModel[s.model] || 0) + s.total_tokens;
-  }
-  const topModels = Object.entries(byModel).sort((a, b) => b[1] - a[1]).slice(0, 3);
-
   const kindColors: Record<string, string> = {
     direct: "bg-[#ff385c]", subagent: "bg-purple-500", main: "bg-green-500",
     channel: "bg-amber-500", heartbeat: "bg-[#c1c1c1]",
   };
-
-  const now = Date.now();
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
-  const monthSnapshots = snapshots.filter((s) => new Date(s.ts).getTime() >= monthStart);
-  const daySnapshots = snapshots.filter((s) => now - new Date(s.ts).getTime() <= 24 * 3600 * 1000);
 
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6 max-w-6xl mx-auto">
@@ -165,69 +149,8 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
       {/* Layer 1 — Status Hero */}
       <StatusHero status={status} snapshots={snapshots} loading={loading} />
 
-      {/* 건강 개요 */}
-      {!loading && (
-        <ClientHealthOverview
-          status={status}
-          systemInfo={systemInfo}
-          monthSnapshots={monthSnapshots as import("@/lib/types").Snapshot[]}
-          daySnapshots={daySnapshots as import("@/lib/types").Snapshot[]}
-        />
-      )}
-
-      {/* 요약 카드 */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatusCard
-          title="게이트웨이"
-          value={status.gateway_online ? "정상" : "오프라인"}
-          subtitle={status.gateway_uptime}
-          icon="🌐"
-          color={status.gateway_online ? "green" : "red"}
-        />
-        <StatusCard
-          title="전체 세션"
-          value={`${status.session_count}`}
-          subtitle={`최근 로드: ${status.sessions.length}개`}
-          icon="💬"
-          color="blue"
-        />
-        <StatusCard
-          title="태스크"
-          value={`${status.tasks.running} 실행중`}
-          subtitle={`전체 ${status.tasks.total}개 (실패 ${status.tasks.failed})`}
-          icon="⚡"
-          color={status.tasks.failed > 0 ? "red" : "purple"}
-        />
-      </div>
-
-      {/* 토큰 요약 */}
-      <div className="bg-white shadow-card rounded-card p-5">
-        <h3 className="text-sm font-semibold text-nearblack mb-4">토큰 사용량 요약</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
-          <div>
-            <p className="text-xs text-secondary mb-1 font-medium">최근 세션 합산</p>
-            <p className="text-2xl font-bold text-nearblack" style={{ letterSpacing: "-0.44px" }}>{(totalTokens / 1000).toFixed(0)}k</p>
-            <p className="text-xs text-secondary mt-1">토큰</p>
-            {estimatedTotal > 0 && (
-              <p className="text-xs text-amber-700 mt-1 font-medium">≈ {formatCost(estimatedTotal)}</p>
-            )}
-          </div>
-          <div>
-            <p className="text-xs text-secondary mb-1 font-medium">기본 모델</p>
-            <p className="text-sm font-semibold text-rausch truncate">{status.default_model}</p>
-            <p className="text-xs text-secondary mt-1">컨텍스트 {(status.default_context_tokens / 1000).toFixed(0)}k</p>
-          </div>
-          <div>
-            <p className="text-xs text-secondary mb-2 font-medium">모델별 사용</p>
-            {topModels.map(([model, tokens]) => (
-              <div key={model} className="flex items-center justify-between text-xs mb-1">
-                <span className="text-secondary truncate max-w-[120px]">{model}</span>
-                <span className="text-nearblack font-medium">{(tokens / 1000).toFixed(0)}k</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* Layer 2 — KPI Strip */}
+      {!loading && <KpiStrip snapshots={snapshots} />}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         {/* 시스템 리소스 */}
