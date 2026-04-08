@@ -643,7 +643,7 @@ async function collectAndReport() {
   try {
     let fullStatus;
     try {
-      const raw = await runOpenClaw(["status", "--json"]);
+      const raw = await withTimeout(runOpenClaw(["status", "--json"]), 12000, "openclaw status");
       fullStatus = normalizeStatus(parseJsonLoose(raw));
     } catch (e) {
       const snippet = typeof e?.message === "string" ? e.message.slice(0, 300) : String(e).slice(0, 300);
@@ -653,7 +653,7 @@ async function collectAndReport() {
 
     // 실패 태스크 상세 — best-effort. tasks list 가 실패해도 스냅샷 자체는 계속 전송.
     try {
-      const raw = await runOpenClaw(["tasks", "list", "--json", "--status", "failed"]);
+      const raw = await withTimeout(runOpenClaw(["tasks", "list", "--json", "--status", "failed"]), 8000, "openclaw tasks list");
       const parsed = parseJsonLoose(raw);
       const items = Array.isArray(parsed?.tasks) ? parsed.tasks : [];
       // endedAt 내림차순으로 최근 10건만 — 페이로드 보호
