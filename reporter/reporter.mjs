@@ -10,7 +10,9 @@
  */
 
 import { exec, execFile, execSync } from "node:child_process";
-import { readFileSync, existsSync, accessSync, constants as fsConstants, statfsSync, openSync, fstatSync, readSync, closeSync } from "node:fs";
+import { readFileSync, existsSync, accessSync, constants as fsConstants, statfsSync, openSync, fstatSync, readSync, closeSync, writeFileSync, renameSync, copyFileSync, unlinkSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 import { homedir, cpus, totalmem, freemem } from "node:os";
 import { join, dirname } from "node:path";
 import { promisify } from "node:util";
@@ -196,6 +198,7 @@ const openClawDeviceIdentity = loadOpenClawDeviceIdentity();
 const INGEST_URL = `${supabase_url}/functions/v1/ingest-snapshot`;
 const POLL_URL = `${supabase_url}/functions/v1/poll-commands`;
 const UPDATE_URL = `${supabase_url}/functions/v1/update-command`;
+const REPORTER_VERSION_URL = `${supabase_url}/functions/v1/reporter-version`;
 
 // ─────────────────────────────────────────
 // 비용 계산 (costCalculator.ts 포팅)
@@ -654,7 +657,85 @@ async function collectRecentLogs({ force = false, logFilePathHint = null } = {})
 // Reporter 자체 진단 state (24h 카운터 + 마지막 에러)
 // ─────────────────────────────────────────
 
-const REPORTER_VERSION = "2026.4.8-diagnostics";
+const REPORTER_VERSION = "2026.4.9-auto-update";
+
+// ─────────────────────────────────────────
+// 자동 업데이트 — 중앙에서 새 reporter.mjs 를 받아 자체 교체 + 재시작
+// ─────────────────────────────────────────
+
+const SELF_PATH = fileURLToPath(import.meta.url);
+let updateInProgress = false;
+
+/** 단순 버전 비교 — release 스크립트와 동일 로직. */
+function compareReporterVersions(a, b) {
+  if (a === b) return 0;
+  const norm = (v) => String(v).split(/[^0-9]+/).filter(Boolean).map(Number);
+  const aa = norm(a), bb = norm(b);
+  const len = Math.max(aa.length, bb.length);
+  for (let i = 0; i < len; i++) {
+    const x = aa[i] ?? 0, y = bb[i] ?? 0;
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+async function checkForReporterUpdate() {
+  if (updateInProgress) return;
+  try {
+    const res = await fetchWithTimeout(
+      `${REPORTER_VERSION_URL}?current=${encodeURIComponent(REPORTER_VERSION)}`,
+      {
+        headers: { Authorization: `Bearer ${reporter_token}` },
+      },
+    );
+    if (!res.ok) return;
+    const data = await res.json().catch(() => null);
+    if (!data?.should_update || !data?.latest) return;
+
+    const latest = data.latest;
+    // 안전망: 실제로 더 높은 버전일 때만 (서버 판정 + 자체 비교 둘 다 일치)
+    if (compareReporterVersions(REPORTER_VERSION, latest.version) >= 0) return;
+
+    console.log(`[Reporter] 🆕 새 버전 감지: ${REPORTER_VERSION} → ${latest.version} (다운로드 중)`);
+    updateInProgress = true;
+
+    // 다운로드 + sha256 검증
+    const dl = await fetchWithTimeout(latest.download_url, {});
+    if (!dl.ok) throw new Error(`다운로드 실패: HTTP ${dl.status}`);
+    const buf = Buffer.from(await dl.arrayBuffer());
+    const got = createHash("sha256").update(buf).digest("hex");
+    if (got !== latest.sha256) {
+      throw new Error(`sha256 불일치: expected ${latest.sha256}, got ${got}`);
+    }
+
+    // 원자적 교체: .new → backup .bak → rename
+    const tmpPath = `${SELF_PATH}.new`;
+    const bakPath = `${SELF_PATH}.bak`;
+    writeFileSync(tmpPath, buf, { mode: 0o644 });
+    try {
+      copyFileSync(SELF_PATH, bakPath);
+    } catch (e) {
+      console.warn(`[Reporter] 백업 생성 실패(무시): ${e?.message ?? e}`);
+    }
+    renameSync(tmpPath, SELF_PATH);
+
+    console.log(`[Reporter] ✅ 업데이트 완료 → ${latest.version}. launchd/systemd 가 재시작합니다.`);
+    // launchd/systemd 가 KeepAlive/Restart=always 로 띄우므로 exit 0 이면 바로 재기동
+    setTimeout(() => process.exit(0), 500);
+  } catch (e) {
+    updateInProgress = false;
+    console.warn(`[Reporter] 업데이트 실패(무시): ${e?.message ?? e}`);
+    // 롤백: .bak 이 있으면 원본으로 복구
+    try {
+      const bak = `${SELF_PATH}.bak`;
+      if (existsSync(bak)) {
+        copyFileSync(bak, SELF_PATH);
+        console.warn("[Reporter] .bak 에서 롤백했습니다.");
+      }
+    } catch {}
+  }
+}
+
 const reporterDiag = {
   ws_reconnects_24h: 0,
   last_ws_close_code: null,
@@ -1281,6 +1362,10 @@ if (gateway_token) {
 
 // 명령 폴링 즉시 시작
 pollAndExecuteCommands();
+
+// 자동 업데이트 체크 — 부팅 직후 한 번 + 5분 주기
+checkForReporterUpdate().catch(() => {});
+setInterval(() => { checkForReporterUpdate().catch(() => {}); }, 5 * 60_000);
 
 // 공통 타이머
 setInterval(healthLoop, health_check_interval_ms);              // 폴링 모드 헬스체크 (WS 모드엔 no-op)

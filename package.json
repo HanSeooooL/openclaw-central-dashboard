@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "release:reporter": "node scripts/release-reporter.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.0",
