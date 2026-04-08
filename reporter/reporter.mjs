@@ -493,7 +493,7 @@ function withTimeout(promise, ms, label) {
 }
 
 /** openclaw CLI 를 실행해 JSON 파싱까지. 실패/타임아웃 시 { data: null, error: string }. */
-async function runOpenClawJson(args, { timeoutMs = 8000 } = {}) {
+async function runOpenClawJson(args, { timeoutMs = 20000 } = {}) {
   try {
     const raw = await withTimeout(runOpenClaw(args), timeoutMs, `openclaw ${args.join(" ")}`);
     const data = parseJsonLoose(raw);
@@ -698,7 +698,7 @@ async function collectAndReport() {
 
     // 실패 태스크 상세 — best-effort. tasks list 가 실패해도 스냅샷 자체는 계속 전송.
     try {
-      const raw = await withTimeout(runOpenClaw(["tasks", "list", "--json", "--status", "failed"]), 15000, "openclaw tasks list");
+      const raw = await withTimeout(runOpenClaw(["tasks", "list", "--json", "--status", "failed"]), 30000, "openclaw tasks list");
       const parsed = parseJsonLoose(raw);
       const items = Array.isArray(parsed?.tasks) ? parsed.tasks : [];
       // endedAt 내림차순으로 최근 10건만 — 페이로드 보호
