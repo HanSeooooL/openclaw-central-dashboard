@@ -2,9 +2,8 @@
 
 import { useMemo, useState } from "react";
 import {
-  ComposedChart,
+  LineChart,
   Line,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -187,7 +186,7 @@ export default function UnifiedTimeline({ snapshots }: UnifiedTimelineProps) {
       ) : (
         <>
           <ResponsiveContainer width="100%" height={280}>
-            <ComposedChart
+            <LineChart
               data={data}
               margin={{ top: 8, right: 16, bottom: 4, left: 0 }}
             >
@@ -258,14 +257,14 @@ export default function UnifiedTimeline({ snapshots }: UnifiedTimelineProps) {
                       strokeWidth={1}
                     />
                   ))}
-                  <Bar
+                  <Line
                     yAxisId="tok"
+                    type="monotone"
                     dataKey="tokens"
                     name="토큰 (k, 증가분)"
-                    fill="#ff385c"
-                    fillOpacity={0.85}
-                    barSize={hours <= 1 ? 24 : hours <= 6 ? 18 : hours <= 24 ? 12 : 6}
-                    minPointSize={3}
+                    stroke="#ff385c"
+                    strokeWidth={1.5}
+                    dot={false}
                   />
                   <Line
                     yAxisId="cost"
@@ -410,7 +409,7 @@ export default function UnifiedTimeline({ snapshots }: UnifiedTimelineProps) {
                   />
                 </>
               )}
-            </ComposedChart>
+            </LineChart>
           </ResponsiveContainer>
 
           {/* 범례 보조 — 오버레이 의미 설명 */}
