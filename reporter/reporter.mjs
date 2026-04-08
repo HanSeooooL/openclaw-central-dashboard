@@ -135,6 +135,7 @@ const {
   supabase_url,
   reporter_token,
   client_id,
+  gateway_host = "localhost",
   gateway_port = 18789,
   gateway_token: _gateway_token_cfg = null, // reporter config에 명시적으로 설정한 경우
   health_check_interval_ms = 30000,
@@ -649,7 +650,7 @@ async function connectGatewayWebSocket() {
   }
 
   return new Promise((resolve) => {
-    const wsUrl = `ws://localhost:${gateway_port}`;
+    const wsUrl = `ws://${gateway_host}:${gateway_port}`;
     let ws;
     let resolved = false;
 
@@ -837,6 +838,18 @@ async function connectGatewayWebSocket() {
 
       if (event.code !== 1000 && event.code !== 1001) {
         console.log(`[Reporter] WebSocket 연결 끊어짐 (code: ${event.code}) → ${WS_RECONNECT_MS / 1000}초 후 재연결`);
+
+        // WS 모드 → 폴링 전환 직후엔 lastHealthOk가 null이라 healthLoop가 transition을
+        // 못 잡고 5분 heartbeat까지 침묵하는 문제가 있음. 즉시 한 번 스캔해서 offline
+        // 상태를 빠르게 보고한다.
+        if (wasMode) {
+          setTimeout(() => {
+            collectAndReport().catch((e) =>
+              console.warn(`[Reporter] WS→폴링 전환 직후 수집 실패: ${e?.message ?? e}`)
+            );
+          }, 1000);
+        }
+
         wsReconnectTimer = setTimeout(async () => {
           const ok = await connectGatewayWebSocket();
           if (!ok && !wsMode) {
@@ -857,7 +870,7 @@ async function connectGatewayWebSocket() {
 // 2단계 헬스 체크 루프 (폴링 모드 전용)
 // ─────────────────────────────────────────
 
-const GATEWAY_HEALTH_URL = `http://localhost:${gateway_port}/health`;
+const GATEWAY_HEALTH_URL = `http://${gateway_host}:${gateway_port}/health`;
 
 let lastHealthOk = null;   // null = 최초 미확인
 
@@ -911,7 +924,7 @@ async function wsHeartbeatLoop() {
 // 메인
 // ─────────────────────────────────────────
 
-console.log(`[Reporter] 시작 — client_id: ${client_id}`);
+console.log(`[Reporter] 시작 — client_id: ${client_id}${gateway_host !== "localhost" ? ` (gateway: ${gateway_host}:${gateway_port})` : ""}`);
 
 // WebSocket 모드 시도
 if (gateway_token) {

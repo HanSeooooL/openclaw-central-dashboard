@@ -135,11 +135,30 @@ Deno.serve(async (req) => {
       }
     }
 
+    // dedup: 최근 N분 내 동일 type 알림이 있으면 후보에서 제거
+    let inserted = 0;
     if (alerts.length > 0) {
-      await supabase.from("alerts").insert(alerts);
+      const dedupWindowMin = Number(Deno.env.get("ALERT_DEDUP_WINDOW_MIN") ?? "10");
+      const since = new Date(Date.now() - dedupWindowMin * 60_000).toISOString();
+      const types = [...new Set(alerts.map((a) => a.type))];
+
+      const { data: recent } = await supabase
+        .from("alerts")
+        .select("type")
+        .eq("client_id", clientId)
+        .in("type", types)
+        .gte("ts", since);
+
+      const recentTypes = new Set((recent ?? []).map((r: { type: string }) => r.type));
+      const fresh = alerts.filter((a) => !recentTypes.has(a.type));
+
+      if (fresh.length > 0) {
+        const { error: alertError } = await supabase.from("alerts").insert(fresh);
+        if (!alertError) inserted = fresh.length;
+      }
     }
 
-    return new Response(JSON.stringify({ ok: true, alerts: alerts.length }), {
+    return new Response(JSON.stringify({ ok: true, alerts: inserted }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

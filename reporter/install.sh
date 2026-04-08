@@ -11,6 +11,7 @@ set -e
 SUPABASE_URL="https://ytagjuslvkyhatsvppob.supabase.co"
 REPORTER_TOKEN=""
 CLIENT_ID=""
+GATEWAY_HOST="localhost"
 GATEWAY_PORT=18789
 GATEWAY_TOKEN=""
 INSTALL_DIR="$HOME/.openclaw-reporter"
@@ -21,6 +22,7 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --token)         REPORTER_TOKEN="$2"; shift 2 ;;
     --client-id)     CLIENT_ID="$2";      shift 2 ;;
+    --gateway-host)  GATEWAY_HOST="$2";   shift 2 ;;
     --gateway-port)  GATEWAY_PORT="$2";   shift 2 ;;
     --gateway-token) GATEWAY_TOKEN="$2";  shift 2 ;;
     *) echo "알 수 없는 옵션: $1"; exit 1 ;;
@@ -30,7 +32,8 @@ done
 if [ -z "$REPORTER_TOKEN" ] || [ -z "$CLIENT_ID" ]; then
   echo "오류: --token 과 --client-id 가 필요합니다."
   echo "사용법: curl -fsSL <URL>/install.sh | bash -s -- --token <TOKEN> --client-id <UUID>"
-  echo "  옵션: --gateway-port <PORT>   (기본값: 18789)"
+  echo "  옵션: --gateway-host <HOST>   (기본값: localhost — 컨테이너 sidecar는 host.docker.internal 등)"
+  echo "        --gateway-port <PORT>   (기본값: 18789)"
   echo "        --gateway-token <TOKEN>  (기본값: ~/.openclaw/openclaw.json 자동 감지)"
   exit 1
 fi
@@ -90,6 +93,7 @@ if command -v python3 &>/dev/null; then
   REPORTER_TOKEN="$REPORTER_TOKEN" \
   CLIENT_ID="$CLIENT_ID" \
   OPENCLAW_BIN="$OPENCLAW_BIN" \
+  GATEWAY_HOST="$GATEWAY_HOST" \
   GATEWAY_PORT="$GATEWAY_PORT" \
   GATEWAY_TOKEN="$GATEWAY_TOKEN" \
   python3 - > "$INSTALL_DIR/config.json" <<'PY'
@@ -99,6 +103,7 @@ cfg = {
   "reporter_token": os.environ["REPORTER_TOKEN"],
   "client_id": os.environ["CLIENT_ID"],
   "openclaw_bin": os.environ["OPENCLAW_BIN"],
+  "gateway_host": os.environ["GATEWAY_HOST"],
   "gateway_port": int(os.environ["GATEWAY_PORT"]),
   "gateway_token": os.environ["GATEWAY_TOKEN"] or None,
   "health_check_interval_ms": 30000,
@@ -116,6 +121,7 @@ else
   "reporter_token": "$REPORTER_TOKEN",
   "client_id": "$CLIENT_ID",
   "openclaw_bin": "$OPENCLAW_BIN",
+  "gateway_host": "$GATEWAY_HOST",
   "gateway_port": $GATEWAY_PORT,
   "gateway_token": $GATEWAY_TOKEN_JSON,
   "health_check_interval_ms": 30000,
@@ -218,46 +224,80 @@ EOF
   echo "             미감지 시 폴링 모드 (헬스체크 30s, 풀스캔 5min)"
 
 else
-  # ── fallback: shell 래퍼 ──
-  echo "▸ systemd/launchd 없음 → shell 래퍼 등록 중..."
+  # ── fallback: PID 파일 + cron 데몬화 (systemd 없는 Linux/Alpine/Docker) ──
+  echo "▸ systemd/launchd 없음 → PID + cron 데몬화 모드"
 
-  WRAPPER_MARKER="# >>> openclaw-reporter auto-start <<<"
-  WRAPPER_FUNC="$WRAPPER_MARKER
-openclaw() {
-  command openclaw \"\$@\"
-  if [ \"\$1\" = \"start\" ]; then
-    if pgrep -f \"reporter.mjs\" > /dev/null 2>&1; then
-      echo \"[Reporter] 이미 실행 중입니다\"
-    else
-      nohup node \"\$HOME/.openclaw-reporter/reporter.mjs\" \
-        >> \"\$HOME/.openclaw-reporter/reporter.log\" 2>&1 &
-      disown
-      echo \"[Reporter] 시작됨 (PID: \$!)\"
+  PID_FILE="$INSTALL_DIR/reporter.pid"
+  RUN_SCRIPT="$INSTALL_DIR/run.sh"
+
+  cat > "$RUN_SCRIPT" <<RUNEOF
+#!/bin/sh
+# openclaw-reporter supervisor — cron으로 매분 호출되어 죽어있으면 살림
+PID_FILE="$PID_FILE"
+LOG_FILE="$INSTALL_DIR/reporter.log"
+NODE_BIN="$NODE_BIN"
+REPORTER="$INSTALL_DIR/reporter.mjs"
+
+if [ -f "\$PID_FILE" ] && kill -0 "\$(cat "\$PID_FILE" 2>/dev/null)" 2>/dev/null; then
+  exit 0   # 이미 살아있음
+fi
+
+nohup "\$NODE_BIN" "\$REPORTER" >> "\$LOG_FILE" 2>&1 &
+echo \$! > "\$PID_FILE"
+RUNEOF
+  chmod +x "$RUN_SCRIPT"
+  echo "  → $RUN_SCRIPT 생성"
+
+  # cron 등록 시도: system cron → user crontab → 안내
+  CRON_ENTRY="* * * * * $RUN_SCRIPT >/dev/null 2>&1"
+  CRON_REBOOT="@reboot $RUN_SCRIPT >/dev/null 2>&1"
+  CRON_REGISTERED="no"
+
+  if [ -d /etc/cron.d ] && [ -w /etc/cron.d 2>/dev/null ] || sudo -n true 2>/dev/null; then
+    if sudo -n test -w /etc/cron.d 2>/dev/null || [ -w /etc/cron.d ]; then
+      sudo tee /etc/cron.d/openclaw-reporter >/dev/null <<CRONEOF
+# openclaw-reporter supervisor
+$CRON_REBOOT
+$CRON_ENTRY
+CRONEOF
+      echo "  → /etc/cron.d/openclaw-reporter 등록 완료 (매분 supervisor + @reboot)"
+      CRON_REGISTERED="yes"
     fi
   fi
-}
-# <<< openclaw-reporter auto-start >>>"
 
-  if [ "$(basename "$SHELL")" = "zsh" ]; then
-    RC_FILE="$HOME/.zshrc"
-  else
-    RC_FILE="$HOME/.bashrc"
+  if [ "$CRON_REGISTERED" = "no" ] && command -v crontab &>/dev/null; then
+    EXISTING="$(crontab -l 2>/dev/null || true)"
+    if echo "$EXISTING" | grep -qF "$RUN_SCRIPT"; then
+      echo "  → user crontab에 이미 등록됨"
+    else
+      ( echo "$EXISTING"; echo "$CRON_REBOOT"; echo "$CRON_ENTRY" ) | crontab -
+      echo "  → user crontab 등록 완료 (매분 supervisor + @reboot)"
+    fi
+    CRON_REGISTERED="yes"
   fi
 
-  if grep -q "openclaw-reporter auto-start" "$RC_FILE" 2>/dev/null; then
-    echo "  → 이미 등록되어 있습니다. 스킵."
-  else
-    echo "" >> "$RC_FILE"
-    echo "$WRAPPER_FUNC" >> "$RC_FILE"
-    echo "  → $RC_FILE 에 추가 완료"
+  if [ "$CRON_REGISTERED" = "no" ]; then
+    echo ""
+    echo "  ⚠️  cron이 없습니다. 컨테이너/미니멀 환경으로 보입니다."
+    echo "     컨테이너 entrypoint나 supervisord에 다음을 등록하세요:"
+    echo "       $RUN_SCRIPT"
+    echo "     또는 foreground 실행:"
+    echo "       $NODE_BIN $INSTALL_DIR/reporter.mjs"
+  fi
+
+  # 즉시 1회 시작
+  "$RUN_SCRIPT"
+  sleep 2
+  if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    echo "  → reporter 시작됨 (PID: $(cat "$PID_FILE"))"
   fi
 
   echo ""
   echo "✅ 설치 완료!"
   echo ""
-  echo "  적용: source $RC_FILE"
-  echo "  실행: openclaw start  (reporter 자동 시작)"
+  echo "  상태: pgrep -F $PID_FILE && echo alive"
   echo "  로그: tail -f $INSTALL_DIR/reporter.log"
+  echo "  중지: kill \$(cat $PID_FILE)"
   echo ""
   echo "  동작 모드: ~/.openclaw/openclaw.json 감지 시 WebSocket 이벤트 기반"
   echo "             미감지 시 폴링 모드 (헬스체크 30s, 풀스캔 5min)"
