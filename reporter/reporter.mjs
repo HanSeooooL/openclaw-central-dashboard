@@ -419,10 +419,21 @@ async function getSystemInfo() {
     const idle2 = stat2[3], total2 = stat2.reduce((a, b) => a + b, 0);
     cpuUsage = 100 * (1 - (idle2 - idle1) / (total2 - total1));
   } catch {
-    // macOS fallback: loadavg 기반 근사치
-    const load = (await execAsync("sysctl -n vm.loadavg 2>/dev/null || uptime").catch(() => ({ stdout: "" }))).stdout;
-    const match = load.match(/[\d.]+/);
-    cpuUsage = match ? Math.min(100, parseFloat(match[0]) * 25) : 0;
+    // macOS / non-Linux fallback: os.cpus() idle/total 두 샘플 diff
+    const sample = () => {
+      let idle = 0, total = 0;
+      for (const c of cpus()) {
+        for (const t of Object.values(c.times)) total += t;
+        idle += c.times.idle;
+      }
+      return { idle, total };
+    };
+    const a = sample();
+    await new Promise((r) => setTimeout(r, 200));
+    const b = sample();
+    const dt = b.total - a.total;
+    const di = b.idle - a.idle;
+    cpuUsage = dt > 0 ? Math.max(0, Math.min(100, 100 * (1 - di / dt))) : 0;
   }
 
   const memTotal = totalmem();
