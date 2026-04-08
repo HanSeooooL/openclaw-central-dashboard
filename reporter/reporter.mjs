@@ -301,8 +301,18 @@ async function runOpenClaw(args) {
   } catch (e) {
     // non-zero 종료여도 stdout에 유효한 데이터가 있으면 활용
     if (e.stdout?.toString().trim()) return e.stdout.toString();
-    const detail = e.stderr?.toString().trim() ? `\n  stderr: ${e.stderr.toString().trim()}` : "";
-    throw new Error(`openclaw 실행 실패 (${label}): ${e.message}${detail}`);
+    const parts = [];
+    if (e.code != null) parts.push(`code=${e.code}`);
+    if (e.signal) parts.push(`signal=${e.signal}`);
+    if (e.killed) parts.push("killed");
+    const meta = parts.length ? ` [${parts.join(", ")}]` : "";
+    const stderrText = e.stderr?.toString().trim();
+    const stdoutText = e.stdout?.toString().trim();
+    const detail = [
+      stderrText ? `stderr: ${stderrText}` : null,
+      stdoutText ? `stdout: ${stdoutText}` : null,
+    ].filter(Boolean).join("\n  ");
+    throw new Error(`openclaw 실행 실패 (${label})${meta}: ${e.message}${detail ? `\n  ${detail}` : ""}`);
   }
   if (!stdout.trim()) {
     throw new Error(`openclaw 빈 출력 (${label})${stderr.trim() ? `\n  stderr: ${stderr.trim()}` : ""}`);
@@ -625,7 +635,7 @@ async function connectGatewayWebSocket() {
             minProtocol: 3,
             maxProtocol: 3,
             role: "operator",
-            scopes: [],
+            scopes: ["operator.read", "sessions.read", "sessions.subscribe"],
             auth: { token: gateway_token },
           },
         }));
