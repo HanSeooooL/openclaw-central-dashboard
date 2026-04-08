@@ -743,7 +743,9 @@ async function collectAndReport() {
         if ((!fullStatus.channels || fullStatus.channels.length === 0) && Array.isArray(hp.value.channels)) {
           fullStatus.channels = hp.value.channels.map((c) => ({
             name: c.name,
-            status: c.running && c.probe_ok ? "online" : "offline",
+            // probe.ok 가 채널의 실제 가용성. running 은 내부 워커 플래그라
+            // configured 된 채널도 false 일 수 있어 online 판정 기준에서 제외.
+            status: c.probe_ok ? "online" : "offline",
             bot_name: c.bot_name ?? "",
             latency_ms: c.probe_elapsed_ms ?? null,
           }));
