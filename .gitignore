@@ -31,3 +31,4 @@ npm-debug.log*
 
 # claude code
 .claude/
+CLAUDE.md

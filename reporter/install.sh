@@ -50,6 +50,31 @@ fi
 NODE_BIN="$(which node)"
 OS="$(uname -s)"
 
+# openclaw CLI 절대 경로 확정 (PATH 의존성 제거)
+# 1) 사용자 PATH에서 탐색 → 2) 잘 알려진 위치 → 3) Homebrew Cellar glob
+OPENCLAW_BIN="$(command -v openclaw 2>/dev/null || true)"
+if [ -z "$OPENCLAW_BIN" ]; then
+  for cand in \
+    "$HOME/.openclaw/bin/openclaw" \
+    "$HOME/.local/bin/openclaw" \
+    "$HOME/.cargo/bin/openclaw" \
+    "/opt/homebrew/bin/openclaw" \
+    "/usr/local/bin/openclaw"; do
+    if [ -x "$cand" ]; then OPENCLAW_BIN="$cand"; break; fi
+  done
+fi
+if [ -z "$OPENCLAW_BIN" ]; then
+  for cand in /opt/homebrew/Cellar/node/*/bin/openclaw /usr/local/Cellar/node/*/bin/openclaw; do
+    [ -x "$cand" ] && OPENCLAW_BIN="$cand" && break
+  done
+fi
+if [ -z "$OPENCLAW_BIN" ]; then
+  echo "❌ openclaw CLI를 찾을 수 없습니다. 먼저 openclaw를 설치하세요."
+  exit 1
+fi
+# 심볼릭이면 실체 경로로 (Cellar 버전 업글로 깨지지 않게 ‘있는 그대로’ 저장)
+echo "▸ openclaw CLI: $OPENCLAW_BIN"
+
 echo "=== OpenClaw Reporter 설치 ==="
 echo ""
 
@@ -70,6 +95,7 @@ cat > "$INSTALL_DIR/config.json" <<EOF
   "supabase_url": "$SUPABASE_URL",
   "reporter_token": "$REPORTER_TOKEN",
   "client_id": "$CLIENT_ID",
+  "openclaw_bin": "$OPENCLAW_BIN",
   "gateway_port": $GATEWAY_PORT,
   "gateway_token": $GATEWAY_TOKEN_JSON,
   "health_check_interval_ms": 30000,

@@ -232,14 +232,31 @@ function findOpenClawBin() {
     join(homedir(), ".openclaw", "bin", "openclaw"),
     join(homedir(), ".local", "bin", "openclaw"),
     join(homedir(), ".cargo", "bin", "openclaw"),
-    "openclaw",
+    "/opt/homebrew/bin/openclaw",
+    "/usr/local/bin/openclaw",
   ];
   for (const c of candidates) {
     try {
-      execSync(`which ${c} 2>/dev/null || test -f ${c}`, { stdio: "ignore" });
+      execSync(`test -x ${c}`, { stdio: "ignore" });
       return c;
     } catch {}
   }
+  // 마지막 수단: 사용자 셸의 PATH로 탐색 (launchd PATH 미포함분 커버)
+  try {
+    const found = execSync(
+      `bash -lc 'command -v openclaw' 2>/dev/null || zsh -lc 'command -v openclaw' 2>/dev/null`,
+      { encoding: "utf-8" },
+    ).trim();
+    if (found) return found;
+  } catch {}
+  // Homebrew Cellar fallback
+  try {
+    const found = execSync(
+      `ls /opt/homebrew/Cellar/node/*/bin/openclaw /usr/local/Cellar/node/*/bin/openclaw 2>/dev/null | head -1`,
+      { encoding: "utf-8" },
+    ).trim();
+    if (found) return found;
+  } catch {}
   return "openclaw";
 }
 
@@ -250,16 +267,22 @@ async function runOpenClaw(args) {
     return stdout;
   }
   const bin = findOpenClawBin();
+  let stdout = "";
+  let stderr = "";
   try {
-    const { stdout } = await execAsync(`${bin} ${args}`, { timeout: 15000 });
-    return stdout;
+    const r = await execAsync(`${bin} ${args}`, { timeout: 15000 });
+    stdout = r.stdout ?? "";
+    stderr = r.stderr ?? "";
   } catch (e) {
     // non-zero 종료여도 stdout에 유효한 데이터가 있으면 활용
-    // (일부 CLI는 경고 발생 시 exit code 1을 반환하면서도 stdout에 정상 JSON을 씀)
     if (e.stdout?.trim()) return e.stdout;
     const detail = e.stderr?.trim() ? `\n  stderr: ${e.stderr.trim()}` : "";
-    throw new Error(`${e.message}${detail}`);
+    throw new Error(`openclaw 실행 실패 (bin=${bin}): ${e.message}${detail}`);
   }
+  if (!stdout.trim()) {
+    throw new Error(`openclaw 빈 출력 (bin=${bin}, args=${args})${stderr.trim() ? `\n  stderr: ${stderr.trim()}` : ""}`);
+  }
+  return stdout;
 }
 
 // ─────────────────────────────────────────
@@ -490,7 +513,13 @@ async function connectGatewayWebSocket() {
       // 게이트웨이가 connect.challenge를 보낼 때까지 대기
     });
 
-    ws.addEventListener("message", async (event) => {
+    ws.addEventListener("message", (event) => {
+      handleWsMessage(event).catch((err) => {
+        console.warn(`[Reporter] WS 메시지 처리 예외: ${err?.message ?? err}`);
+      });
+    });
+
+    async function handleWsMessage(event) {
       let msg;
       try {
         msg = JSON.parse(typeof event.data === "string" ? event.data : event.data.toString());
@@ -537,9 +566,16 @@ async function connectGatewayWebSocket() {
           params: {},
         }));
 
-        // 즉시 첫 스캔
+        // 즉시 첫 스캔 (실패해도 핸들러가 silent로 죽지 않도록 try/catch)
         lastFullScanAt = Date.now();
-        await collectAndReport();
+        try {
+          await collectAndReport();
+        } catch (e) {
+          console.warn(`[Reporter] 초기 스냅샷 실패: ${e?.message ?? e} → 30초 후 재시도`);
+          setTimeout(() => collectAndReport().catch((err) =>
+            console.warn(`[Reporter] 재시도 실패: ${err?.message ?? err}`)
+          ), 30000);
+        }
         return;
       }
 
@@ -572,7 +608,7 @@ async function connectGatewayWebSocket() {
         }
       }
       // tick 이벤트는 30초마다 오지만 heartbeat 역할은 별도 타이머로 처리
-    });
+    }
 
     ws.addEventListener("close", (event) => {
       const wasMode = wsMode;
@@ -669,14 +705,14 @@ if (gateway_token) {
   const wsOk = await connectGatewayWebSocket();
   if (!wsOk) {
     console.log(`[Reporter] 폴링 모드로 전환 (헬스체크: ${health_check_interval_ms / 1000}s, 풀스캔: ${full_scan_interval_ms / 1000}s)`);
-    await collectAndReport();
+    await collectAndReport().catch((e) => console.warn(`[Reporter] 초기 수집 실패: ${e?.message ?? e}`));
     lastFullScanAt = Date.now();
   } else {
     console.log(`[Reporter] WebSocket 이벤트 기반 모드 활성 (안전망: ${WS_HEARTBEAT_INTERVAL_MS / 1000}s)`);
   }
 } else {
   console.log(`[Reporter] 폴링 모드 (헬스체크: ${health_check_interval_ms / 1000}s, 풀스캔: ${full_scan_interval_ms / 1000}s)`);
-  await collectAndReport();
+  await collectAndReport().catch((e) => console.warn(`[Reporter] 초기 수집 실패: ${e?.message ?? e}`));
   lastFullScanAt = Date.now();
 }
 
