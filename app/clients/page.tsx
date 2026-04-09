@@ -1,21 +1,32 @@
 import ClientsGrid from "@/components/overview/ClientsGrid";
+import { createAuthedServerClient, isInternalOperator } from "@/lib/supabase-server";
 import type { Client, Snapshot } from "@/lib/types";
 
 async function getClients(): Promise<(Client & { latestSnapshot: Snapshot | null })[]> {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const res = await fetch(`${baseUrl}/api/clients`, {
-      cache: "no-store",
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.clients ?? [];
+    const supabase = await createAuthedServerClient();
+    const { data } = await supabase.rpc("get_clients_with_latest_snapshot");
+    return (data ?? []).map((row: {
+      id: string; name: string; slug: string;
+      created_at: string; notes: string | null;
+      latest_snapshot: Snapshot | null;
+    }) => ({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      created_at: row.created_at,
+      notes: row.notes,
+      latestSnapshot: row.latest_snapshot ?? null,
+    }));
   } catch {
     return [];
   }
 }
 
 export default async function ClientsPage() {
-  const clients = await getClients();
-  return <ClientsGrid initialClients={clients} />;
+  const [clients, isOperator] = await Promise.all([
+    getClients(),
+    isInternalOperator(),
+  ]);
+  return <ClientsGrid initialClients={clients} isOperator={isOperator} />;
 }

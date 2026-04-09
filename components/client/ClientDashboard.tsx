@@ -8,6 +8,7 @@ import HotSessions from "./HotSessions";
 import IncidentFeed from "./IncidentFeed";
 import NotificationSettings from "./NotificationSettings";
 import TokenSettings from "./TokenSettings";
+import UserInviteSettings from "./UserInviteSettings";
 import type { FullStatus, SystemInfo, Snapshot, FailedTaskInfo } from "@/lib/types";
 
 function formatRelative(ms: number | null): string {
@@ -213,6 +214,7 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
           {/* 설정 */}
           <NotificationSettings clientId={clientId} />
           <TokenSettings clientId={clientId} />
+          <UserInviteSettings clientId={clientId} />
         </>
       )}
     </div>

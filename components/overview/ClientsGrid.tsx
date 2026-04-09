@@ -11,9 +11,10 @@ import type { Client, Snapshot } from "@/lib/types";
 
 interface ClientsGridProps {
   initialClients: (Client & { latestSnapshot: Snapshot | null })[];
+  isOperator?: boolean;
 }
 
-export default function ClientsGrid({ initialClients }: ClientsGridProps) {
+export default function ClientsGrid({ initialClients, isOperator = false }: ClientsGridProps) {
   const { clients, setClients, updateClientSnapshot } = useClientStore();
   const alertState = useAlertStore();
   const [showAddModal, setShowAddModal] = useState(false);
@@ -50,13 +51,15 @@ export default function ClientsGrid({ initialClients }: ClientsGridProps) {
           <p className="text-sm text-secondary">등록된 OpenClaw 인스턴스 관제</p>
         </div>
         <div className="flex items-center gap-2 md:gap-3 text-xs font-medium flex-wrap">
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rausch text-white hover:bg-[#e0314f] active:scale-[0.98] transition-all font-semibold"
-          >
-            <span>+</span>
-            <span>고객사 추가</span>
-          </button>
+          {isOperator && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rausch text-white hover:bg-[#e0314f] active:scale-[0.98] transition-all font-semibold"
+            >
+              <span>+</span>
+              <span>고객사 추가</span>
+            </button>
+          )}
           <form action={signOut}>
             <button type="submit" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-secondary hover:text-rausch hover:bg-[#ff385c]/8 transition-all font-medium">
               <span>🚪</span>
