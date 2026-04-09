@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase";
+import { createAuthedServerClient } from "@/lib/supabase-server";
 import type { GatewayCommand } from "@/lib/types";
 
 const VALID_COMMANDS: GatewayCommand[] = ["gateway_start", "gateway_stop", "gateway_restart"];
@@ -17,7 +17,7 @@ export async function POST(
       return NextResponse.json({ error: "유효하지 않은 명령" }, { status: 400 });
     }
 
-    const supabase = createServiceClient();
+    const supabase = await createAuthedServerClient();
 
     const { data, error } = await supabase
       .from("pending_commands")
@@ -42,7 +42,7 @@ export async function GET(
     const url = new URL(request.url);
     const id = url.searchParams.get("id");
 
-    const supabase = createServiceClient();
+    const supabase = await createAuthedServerClient();
 
     if (id) {
       const { data, error } = await supabase

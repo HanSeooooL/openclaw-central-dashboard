@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase";
+import { createAuthedServerClient } from "@/lib/supabase-server";
 
 // GET /api/clients/:clientId/snapshots?hours=24
 export async function GET(
@@ -10,7 +10,7 @@ export async function GET(
     const url = new URL(_request.url);
     const hours = parseInt(url.searchParams.get("hours") ?? "24", 10);
 
-    const supabase = createServiceClient();
+    const supabase = await createAuthedServerClient();
 
     let query = supabase
       .from("snapshots")

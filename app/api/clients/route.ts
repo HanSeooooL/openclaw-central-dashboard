@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
+import { createAuthedServerClient, isInternalOperator } from "@/lib/supabase-server";
 
 // GET /api/clients — 전체 고객사 목록 + 최신 스냅샷 (LATERAL JOIN RPC)
+// RLS 기반: RPC 내부에서 is_internal_operator / current_user_client_ids 필터.
 export async function GET() {
   try {
-    const supabase = createServiceClient();
+    const supabase = await createAuthedServerClient();
 
     const { data, error } = await supabase.rpc("get_clients_with_latest_snapshot");
     if (error) throw error;
@@ -31,6 +33,9 @@ export async function GET() {
 // POST /api/clients — 신규 고객사 등록
 export async function POST(request: Request) {
   try {
+    if (!(await isInternalOperator())) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
     const body = await request.json();
     const { name, slug, token, notes } = body;
 

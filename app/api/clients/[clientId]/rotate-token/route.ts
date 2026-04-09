@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
+import { isInternalOperator } from "@/lib/supabase-server";
 import { randomBytes } from "node:crypto";
 
 // POST /api/clients/:clientId/rotate-token
@@ -12,6 +13,9 @@ export async function POST(
   { params }: { params: { clientId: string } }
 ) {
   try {
+    if (!(await isInternalOperator())) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
     const supabase = createServiceClient();
 
     const { data: client, error: fetchError } = await supabase

@@ -27,7 +27,11 @@ export function createServerClient(cookieStore: ReadonlyRequestCookies) {
   });
 }
 
-// Service Role 클라이언트 (API Route Handler 전용 — 브라우저에서 절대 사용 금지)
+// Service Role 클라이언트 — RLS 우회. 다음 경우에만 사용:
+//   1) Edge Functions (ingest-snapshot 등 reporter 토큰 기반 인증 경로)
+//   2) 시스템 cron / 내부 유지보수 스크립트
+//   3) 운영자 UI 가 아직 RLS 로 못 돌아가는 과도기 코드 (전환 중에만)
+// 브라우저에서 절대 사용 금지.
 export function createServiceClient() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceKey) throw new Error("SUPABASE_SERVICE_ROLE_KEY 환경변수가 설정되지 않았습니다");

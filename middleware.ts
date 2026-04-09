@@ -38,10 +38,31 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (user && isLoginPage) {
-    const homeUrl = request.nextUrl.clone();
-    homeUrl.pathname = "/clients";
-    return NextResponse.redirect(homeUrl);
+  if (user) {
+    // role 분기: internal_operators 에 있으면 운영자(/clients 전체 뷰),
+    // 아니면 테넌트 사용자(/portal 자기 고객사만)
+    const { data: isOperator } = await supabase.rpc("is_internal_operator");
+
+    const isAdminPath = pathname === "/" || pathname.startsWith("/clients");
+    const isPortalPath = pathname.startsWith("/portal");
+
+    if (isLoginPage) {
+      const home = request.nextUrl.clone();
+      home.pathname = isOperator ? "/clients" : "/portal";
+      return NextResponse.redirect(home);
+    }
+
+    if (isAdminPath && !isOperator) {
+      const redirect = request.nextUrl.clone();
+      redirect.pathname = "/portal";
+      return NextResponse.redirect(redirect);
+    }
+
+    if (isPortalPath && isOperator) {
+      const redirect = request.nextUrl.clone();
+      redirect.pathname = "/clients";
+      return NextResponse.redirect(redirect);
+    }
   }
 
   return supabaseResponse;

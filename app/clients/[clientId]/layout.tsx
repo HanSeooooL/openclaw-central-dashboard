@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import ClientSidebar from "@/components/client/ClientSidebar";
 import ClientRealtimeProvider from "@/components/client/ClientRealtimeProvider";
 import NavigationProgress from "@/components/shared/NavigationProgress";
-import { createServiceClient } from "@/lib/supabase";
+import { createAuthedServerClient } from "@/lib/supabase-server";
 
 interface ClientLayoutProps {
   children: React.ReactNode;
@@ -11,7 +11,7 @@ interface ClientLayoutProps {
 
 async function getClient(clientId: string) {
   try {
-    const supabase = createServiceClient();
+    const supabase = await createAuthedServerClient();
     const { data } = await supabase
       .from("clients")
       .select("id, name, slug")

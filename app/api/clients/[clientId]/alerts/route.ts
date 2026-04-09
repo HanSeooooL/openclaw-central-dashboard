@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase";
+import { createAuthedServerClient } from "@/lib/supabase-server";
 
 // GET /api/clients/:clientId/alerts
 export async function GET(
@@ -7,7 +7,7 @@ export async function GET(
   { params }: { params: { clientId: string } }
 ) {
   try {
-    const supabase = createServiceClient();
+    const supabase = await createAuthedServerClient();
 
     const { data, error } = await supabase
       .from("alerts")
@@ -30,7 +30,7 @@ export async function PATCH(
   { params }: { params: { clientId: string } }
 ) {
   try {
-    const supabase = createServiceClient();
+    const supabase = await createAuthedServerClient();
 
     const { error } = await supabase
       .from("alerts")

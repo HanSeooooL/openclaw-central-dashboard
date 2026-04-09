@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase";
+import { createAuthedServerClient } from "@/lib/supabase-server";
 
 // GET /api/clients/:clientId/notification-config
 export async function GET(
@@ -7,7 +7,7 @@ export async function GET(
   { params }: { params: { clientId: string } }
 ) {
   try {
-    const supabase = createServiceClient();
+    const supabase = await createAuthedServerClient();
     const { data, error } = await supabase
       .from("clients")
       .select("notification_config")
@@ -50,7 +50,7 @@ export async function PUT(
       clean.min_severity = config.min_severity;
     }
 
-    const supabase = createServiceClient();
+    const supabase = await createAuthedServerClient();
     const { error } = await supabase
       .from("clients")
       .update({ notification_config: clean })
@@ -70,7 +70,7 @@ export async function POST(
   { params }: { params: { clientId: string } }
 ) {
   try {
-    const supabase = createServiceClient();
+    const supabase = await createAuthedServerClient();
     const { data: client } = await supabase
       .from("clients")
       .select("id, name")
