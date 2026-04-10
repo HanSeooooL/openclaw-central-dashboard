@@ -14,14 +14,14 @@ export function createBrowserClient() {
 export function createServerClient(cookieStore: ReadonlyRequestCookies) {
   return _createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value;
+      getAll() {
+        return cookieStore.getAll();
       },
-      set(name: string, value: string, options: CookieOptions) {
-        try { (cookieStore as unknown as { set: (n: string, v: string, o: CookieOptions) => void }).set(name, value, options); } catch { /* 무시 */ }
-      },
-      remove(name: string, options: CookieOptions) {
-        try { (cookieStore as unknown as { set: (n: string, v: string, o: CookieOptions) => void }).set(name, "", options); } catch { /* 무시 */ }
+      setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+        try {
+          const cs = cookieStore as unknown as { set: (n: string, v: string, o: CookieOptions) => void };
+          cookiesToSet.forEach(({ name, value, options }) => cs.set(name, value, options));
+        } catch { /* Server Component에서는 쿠키 쓰기 불가 — 무시 */ }
       },
     },
   });
