@@ -13,18 +13,17 @@ type CommandStatus = { id: number; command: GatewayCommand; status: PendingComma
 export default function ClientGatewayPanel({ clientId, status }: ClientGatewayPanelProps) {
   const [busy, setBusy] = useState(false);
   const [activeCommand, setActiveCommand] = useState<CommandStatus>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, []);
 
-  const pollCommand = useCallback(async (commandId: number) => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    const maxAttempts = 30;
+  const pollCommand = useCallback((commandId: number) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
     let attempts = 0;
 
-    intervalRef.current = setInterval(async () => {
+    const poll = async () => {
       attempts++;
       try {
         const res = await fetch(`/api/clients/${clientId}/commands?id=${commandId}`);
@@ -32,17 +31,20 @@ export default function ClientGatewayPanel({ clientId, status }: ClientGatewayPa
         const cmd = data.command as PendingCommand;
         setActiveCommand({ id: cmd.id, command: cmd.command, status: cmd.status, result: cmd.result });
 
-        if (cmd.status === "done" || cmd.status === "error" || attempts >= maxAttempts) {
-          clearInterval(intervalRef.current!);
-          intervalRef.current = null;
+        if (cmd.status === "done" || cmd.status === "error" || attempts >= 30) {
+          timerRef.current = null;
           setBusy(false);
+          return;
         }
       } catch {
-        clearInterval(intervalRef.current!);
-        intervalRef.current = null;
+        timerRef.current = null;
         setBusy(false);
+        return;
       }
-    }, 3000);
+      timerRef.current = setTimeout(poll, 3000);
+    };
+
+    timerRef.current = setTimeout(poll, 3000);
   }, [clientId]);
 
   async function issueCommand(command: GatewayCommand) {

@@ -12,7 +12,7 @@ interface PageProps {
 
 export default function SessionsPage({ params }: PageProps) {
   const { clientId } = params;
-  const { dataMap, setStatus } = useClientStore();
+  const { dataMap, setStatus, setLoading } = useClientStore();
   const data = dataMap[clientId];
 
   useEffect(() => {
@@ -23,9 +23,11 @@ export default function SessionsPage({ params }: PageProps) {
         const latest = snaps[snaps.length - 1];
         if (latest?.full_status && latest?.system_info) {
           setStatus(clientId, latest.full_status as FullStatus, latest.system_info as SystemInfo);
+        } else {
+          setLoading(clientId, false);
         }
       })
-      .catch(() => {});
+      .catch(() => setLoading(clientId, false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
 

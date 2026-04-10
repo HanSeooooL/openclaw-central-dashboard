@@ -15,7 +15,7 @@ interface PageProps {
  */
 export default function HistoryPage({ params }: PageProps) {
   const { clientId } = params;
-  const { dataMap, setStatus } = useClientStore();
+  const { dataMap, setStatus, setLoading } = useClientStore();
   const data = dataMap[clientId];
   const status = data?.status;
   const [alerts, setAlerts] = useState<ClientAlert[]>([]);
@@ -37,9 +37,11 @@ export default function HistoryPage({ params }: PageProps) {
             latest.full_status as FullStatus,
             latest.system_info as SystemInfo
           );
+        } else {
+          setLoading(clientId, false);
         }
       })
-      .catch(() => {});
+      .catch(() => setLoading(clientId, false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
 
