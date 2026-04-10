@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
 import { isInternalOperator } from "@/lib/supabase-server";
+import { handleApiError } from "@/lib/api-utils";
 import { randomBytes } from "node:crypto";
 
 // POST /api/clients/:clientId/rotate-token
@@ -66,6 +67,6 @@ export async function POST(
       warning: "이 토큰은 한 번만 표시됩니다. 즉시 reporter config.json 에 반영하세요. 이전 토큰은 24시간 동안 계속 동작합니다.",
     });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return handleApiError(e);
   }
 }

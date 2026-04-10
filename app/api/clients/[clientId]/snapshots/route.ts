@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAuthedServerClient } from "@/lib/supabase-server";
+import { handleApiError } from "@/lib/api-utils";
 
 // GET /api/clients/:clientId/snapshots?hours=24
 export async function GET(
@@ -8,7 +9,7 @@ export async function GET(
 ) {
   try {
     const url = new URL(_request.url);
-    const hours = parseInt(url.searchParams.get("hours") ?? "24", 10);
+    const hours = Math.min(Math.max(parseInt(url.searchParams.get("hours") ?? "24", 10) || 24, 1), 720);
 
     const supabase = await createAuthedServerClient();
 
@@ -28,6 +29,6 @@ export async function GET(
 
     return NextResponse.json({ snapshots: data ?? [] });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return handleApiError(e);
   }
 }

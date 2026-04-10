@@ -28,6 +28,7 @@ interface ClientStoreState {
   setSnapshots: (clientId: string, snapshots: Snapshot[]) => void;
   setLoading: (clientId: string, loading: boolean) => void;
   setError: (clientId: string, error: string | null) => void;
+  clearClient: (clientId: string) => void;
 }
 
 const defaultClientData = (): ClientData => ({
@@ -103,4 +104,10 @@ export const useClientStore = create<ClientStoreState>((set) => ({
         },
       },
     })),
+
+  clearClient: (clientId) =>
+    set((state) => {
+      const { [clientId]: _, ...rest } = state.dataMap;
+      return { dataMap: rest };
+    }),
 }));

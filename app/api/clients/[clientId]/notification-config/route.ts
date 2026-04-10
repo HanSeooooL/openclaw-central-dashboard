@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createAuthedServerClient } from "@/lib/supabase-server";
+import { createAuthedServerClient, isInternalOperator } from "@/lib/supabase-server";
+import { handleApiError } from "@/lib/api-utils";
 
 // GET /api/clients/:clientId/notification-config
 export async function GET(
@@ -16,7 +17,7 @@ export async function GET(
     if (error) throw error;
     return NextResponse.json({ config: data?.notification_config ?? {} });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return handleApiError(e);
   }
 }
 
@@ -43,7 +44,8 @@ export async function PUT(
     if (config.slack && typeof config.slack === "object") {
       clean.slack = {
         enabled: !!config.slack.enabled,
-        webhook_url: typeof config.slack.webhook_url === "string" ? config.slack.webhook_url : "",
+        webhook_url: typeof config.slack.webhook_url === "string" && config.slack.webhook_url.startsWith("https://hooks.slack.com/")
+          ? config.slack.webhook_url : "",
       };
     }
     if (["info", "warning", "critical"].includes(config.min_severity)) {
@@ -59,7 +61,7 @@ export async function PUT(
 
     return NextResponse.json({ ok: true, config: clean });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return handleApiError(e);
   }
 }
 
@@ -70,6 +72,9 @@ export async function POST(
   { params }: { params: { clientId: string } }
 ) {
   try {
+    if (!(await isInternalOperator())) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
     const supabase = await createAuthedServerClient();
     const { data: client } = await supabase
       .from("clients")
@@ -107,6 +112,6 @@ export async function POST(
     const out = await res.json().catch(() => ({}));
     return NextResponse.json({ ok: res.ok, dispatch: out });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return handleApiError(e);
   }
 }

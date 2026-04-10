@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAuthedServerClient } from "@/lib/supabase-server";
+import { handleApiError } from "@/lib/api-utils";
 
 // GET /api/clients/:clientId/alerts
 export async function GET(
@@ -20,7 +21,7 @@ export async function GET(
 
     return NextResponse.json({ alerts: data ?? [] });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return handleApiError(e);
   }
 }
 
@@ -42,6 +43,6 @@ export async function PATCH(
 
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return handleApiError(e);
   }
 }

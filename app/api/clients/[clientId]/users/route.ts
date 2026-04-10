@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
 import { createAuthedServerClient, isInternalOperator } from "@/lib/supabase-server";
+import { handleApiError } from "@/lib/api-utils";
 
 // GET /api/clients/:clientId/users — 이 고객사에 속한 사용자 목록
 export async function GET(
@@ -27,7 +28,7 @@ export async function GET(
 
     return NextResponse.json({ users: results });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return handleApiError(e);
   }
 }
 
@@ -91,6 +92,6 @@ export async function POST(
 
     return NextResponse.json({ ok: true, auth_user_id: authUserId, email, role }, { status: 201 });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return handleApiError(e);
   }
 }

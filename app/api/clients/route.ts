@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
 import { createAuthedServerClient, isInternalOperator } from "@/lib/supabase-server";
+import { handleApiError } from "@/lib/api-utils";
 
 // GET /api/clients — 전체 고객사 목록 + 최신 스냅샷 (LATERAL JOIN RPC)
 // RLS 기반: RPC 내부에서 is_internal_operator / current_user_client_ids 필터.
@@ -26,7 +27,7 @@ export async function GET() {
 
     return NextResponse.json({ clients: clientsWithSnapshot });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return handleApiError(e);
   }
 }
 
@@ -62,6 +63,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ client }, { status: 201 });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return handleApiError(e);
   }
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAuthedServerClient } from "@/lib/supabase-server";
+import { handleApiError } from "@/lib/api-utils";
 import type { GatewayCommand } from "@/lib/types";
 
 const VALID_COMMANDS: GatewayCommand[] = ["gateway_start", "gateway_stop", "gateway_restart"];
@@ -29,7 +30,7 @@ export async function POST(
 
     return NextResponse.json({ command: data }, { status: 201 });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return handleApiError(e);
   }
 }
 
@@ -67,6 +68,6 @@ export async function GET(
     if (error) throw error;
     return NextResponse.json({ commands: data ?? [] });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return handleApiError(e);
   }
 }
