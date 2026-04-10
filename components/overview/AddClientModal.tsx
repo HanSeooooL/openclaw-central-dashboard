@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useToastStore } from "@/stores/toastStore";
 
 interface AddClientModalProps {
   onClose: () => void;
@@ -26,6 +27,22 @@ const INSTALL_SCRIPT_BASE =
   "https://raw.githubusercontent.com/HanSeooooL/openclaw-central-dashboard/main/reporter/install.sh";
 
 export default function AddClientModal({ onClose, onAdded }: AddClientModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const { addToast } = useToastStore();
+
+  // ESC 키 닫기
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  // 마운트 시 포커스
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
   const [step, setStep] = useState<"form" | "done">("form");
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -63,6 +80,7 @@ export default function AddClientModal({ onClose, onAdded }: AddClientModalProps
       setCreatedClient(data.client);
       onAdded(data.client);
       setStep("done");
+      addToast({ message: `${data.client.name} 등록 완료`, type: "success" });
     } catch (e) {
       setError(String(e).replace("Error: ", ""));
     } finally {
@@ -88,12 +106,19 @@ export default function AddClientModal({ onClose, onAdded }: AddClientModalProps
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
 
       {/* 모달 */}
-      <div className="relative bg-white rounded-card shadow-card-hover w-full max-w-lg">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-client-title"
+        tabIndex={-1}
+        className="relative bg-white rounded-card shadow-card-hover w-full max-w-lg max-h-[90vh] overflow-y-auto outline-none"
+      >
         {/* 헤더 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
           <div className="flex items-center gap-2.5">
             <span className="w-8 h-8 bg-[#ff385c]/10 rounded-badge flex items-center justify-center text-base">🏢</span>
-            <h2 className="text-base font-bold text-nearblack">
+            <h2 id="add-client-title" className="text-base font-bold text-nearblack">
               {step === "form" ? "고객사 추가" : "설치 안내"}
             </h2>
           </div>

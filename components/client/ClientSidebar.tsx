@@ -78,7 +78,10 @@ export default function ClientSidebar({ clientId, clientName }: ClientSidebarPro
               <span className="text-base flex-shrink-0">{item.icon}</span>
               <span className="flex-1">{item.label}</span>
               {showBadge && (
-                <span className="bg-rausch text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0">
+                <span
+                  className="bg-rausch text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+                  aria-label={`미확인 알림 ${unreadCount}건`}
+                >
                   {unreadCount > 9 ? "9+" : unreadCount}
                 </span>
               )}

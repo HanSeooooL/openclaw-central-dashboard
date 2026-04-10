@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import ToastContainer from "@/components/shared/ToastContainer";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,7 +16,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">
-      <body className="bg-white text-nearblack antialiased">{children}</body>
+      <body className="bg-white text-nearblack antialiased">
+        {children}
+        <ToastContainer />
+      </body>
     </html>
   );
 }

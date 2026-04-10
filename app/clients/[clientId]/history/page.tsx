@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useCallback, useState } from "react";
 import ClientAlertsPanel from "@/components/client/ClientAlertsPanel";
 import { useClientStore } from "@/stores/clientStore";
+import { ErrorState } from "@/components/shared/EmptyState";
 import type { ClientAlert, FullStatus, SystemInfo, Snapshot } from "@/lib/types";
 
 interface PageProps {
@@ -15,12 +16,12 @@ interface PageProps {
  */
 export default function HistoryPage({ params }: PageProps) {
   const { clientId } = params;
-  const { dataMap, setStatus, setLoading } = useClientStore();
+  const { dataMap, setStatus, setError } = useClientStore();
   const data = dataMap[clientId];
   const status = data?.status;
   const [alerts, setAlerts] = useState<ClientAlert[]>([]);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     fetch(`/api/clients/${clientId}/alerts`)
       .then((r) => r.json())
       .then((d) => setAlerts(d.alerts ?? []))
@@ -38,12 +39,18 @@ export default function HistoryPage({ params }: PageProps) {
             latest.system_info as SystemInfo
           );
         } else {
-          setLoading(clientId, false);
+          setError(clientId, null);
         }
       })
-      .catch(() => setLoading(clientId, false));
+      .catch(() => setError(clientId, "기록 데이터를 불러올 수 없습니다"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (data?.error) {
+    return <ErrorState message={data.error} onRetry={load} />;
+  }
 
   const debugFields = [
     status?.debug_gateway_error && { label: "gateway", text: status.debug_gateway_error },

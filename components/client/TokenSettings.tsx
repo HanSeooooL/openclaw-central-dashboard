@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useToastStore } from "@/stores/toastStore";
 
 interface Props {
   clientId: string;
@@ -14,6 +15,7 @@ export default function TokenSettings({ clientId }: Props) {
   const [graceExpires, setGraceExpires] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const { addToast } = useToastStore();
 
   const rotate = async () => {
     setRotating(true);
@@ -25,8 +27,10 @@ export default function TokenSettings({ clientId }: Props) {
       setNewToken(data.token);
       setGraceExpires(data.grace_expires);
       setConfirming(false);
+      addToast({ message: "토큰이 재발급되었습니다", type: "success" });
     } catch (e) {
       setError((e as Error).message);
+      addToast({ message: "토큰 재발급 실패", type: "error" });
     } finally {
       setRotating(false);
     }

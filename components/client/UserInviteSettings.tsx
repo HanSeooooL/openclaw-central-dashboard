@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useToastStore } from "@/stores/toastStore";
 
 interface Props {
   clientId: string;
@@ -23,6 +24,7 @@ export default function UserInviteSettings({ clientId }: Props) {
   const [inviting, setInviting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const { addToast } = useToastStore();
 
   const load = async () => {
     setLoading(true);
@@ -54,10 +56,12 @@ export default function UserInviteSettings({ clientId }: Props) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "invite failed");
       setOk(`${email} 초대 완료 — magic link 이메일 발송됨`);
+      addToast({ message: `${email} 초대 완료`, type: "success" });
       setEmail("");
       await load();
     } catch (err) {
       setError((err as Error).message);
+      addToast({ message: "초대 실패", type: "error" });
     } finally {
       setInviting(false);
     }

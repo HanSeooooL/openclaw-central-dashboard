@@ -8,6 +8,7 @@ interface ClientData {
   systemInfo: SystemInfo | null;
   snapshots: Snapshot[];
   loading: boolean;
+  error: string | null;
   lastSeen: string | null;
 }
 
@@ -26,6 +27,7 @@ interface ClientStoreState {
   setStatus: (clientId: string, fullStatus: FullStatus, systemInfo: SystemInfo) => void;
   setSnapshots: (clientId: string, snapshots: Snapshot[]) => void;
   setLoading: (clientId: string, loading: boolean) => void;
+  setError: (clientId: string, error: string | null) => void;
 }
 
 const defaultClientData = (): ClientData => ({
@@ -33,6 +35,7 @@ const defaultClientData = (): ClientData => ({
   systemInfo: null,
   snapshots: [],
   loading: true,
+  error: null,
   lastSeen: null,
 });
 
@@ -59,6 +62,7 @@ export const useClientStore = create<ClientStoreState>((set) => ({
           status: fullStatus,
           systemInfo,
           loading: false,
+          error: null,
           lastSeen: new Date().toISOString(),
         },
       },
@@ -72,6 +76,7 @@ export const useClientStore = create<ClientStoreState>((set) => ({
           ...(state.dataMap[clientId] ?? defaultClientData()),
           snapshots,
           loading: false,
+          error: null,
         },
       },
     })),
@@ -83,6 +88,18 @@ export const useClientStore = create<ClientStoreState>((set) => ({
         [clientId]: {
           ...(state.dataMap[clientId] ?? defaultClientData()),
           loading,
+        },
+      },
+    })),
+
+  setError: (clientId, error) =>
+    set((state) => ({
+      dataMap: {
+        ...state.dataMap,
+        [clientId]: {
+          ...(state.dataMap[clientId] ?? defaultClientData()),
+          error,
+          loading: false,
         },
       },
     })),

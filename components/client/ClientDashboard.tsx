@@ -4,6 +4,7 @@ import { useState } from "react";
 import StatusHero from "./StatusHero";
 import KpiStrip from "./KpiStrip";
 import UnifiedTimeline from "./UnifiedTimeline";
+import { SkeletonCard, SkeletonChart } from "@/components/shared/Skeleton";
 import HotSessions from "./HotSessions";
 import IncidentFeed from "./IncidentFeed";
 import NotificationSettings from "./NotificationSettings";
@@ -88,10 +89,16 @@ export default function ClientDashboard({ clientId, status, systemInfo, snapshot
       <StatusHero status={status} snapshots={snapshots} loading={loading} />
 
       {/* Layer 2 — KPI Strip */}
-      {!loading && <KpiStrip snapshots={snapshots} />}
+      {loading ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+          <SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard />
+        </div>
+      ) : (
+        <KpiStrip snapshots={snapshots} />
+      )}
 
       {/* Layer 3 — Unified Timeline */}
-      {!loading && <UnifiedTimeline snapshots={snapshots} />}
+      {loading ? <SkeletonChart /> : <UnifiedTimeline snapshots={snapshots} />}
 
       {/* Layer 4 — Active State */}
       {!loading && (

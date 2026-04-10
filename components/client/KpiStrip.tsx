@@ -90,11 +90,12 @@ export default function KpiStrip({ snapshots }: KpiStripProps) {
       {/* 기간 토글 */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-nearblack">사용 요약</h3>
-        <div className="flex bg-surface rounded-lg p-1 gap-0.5">
+        <div className="flex bg-surface rounded-lg p-1 gap-0.5" role="group" aria-label="기간 선택">
           {PERIODS.map((p) => (
             <button
               key={p.id}
               onClick={() => setPeriod(p.id)}
+              aria-pressed={period === p.id}
               className={`px-3 py-1 text-xs rounded-md transition-all font-medium ${
                 period === p.id
                   ? "bg-rausch text-white"

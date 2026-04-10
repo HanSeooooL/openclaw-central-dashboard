@@ -132,7 +132,7 @@ function IncidentRow({ alert }: { alert: ClientAlert }) {
                 meta.disk_percent != null ||
                 meta.gateway_uptime ||
                 meta.gateway_latency_ms != null) && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-white/60 rounded p-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 bg-white/60 rounded p-2">
                   {meta.cpu_usage != null && (
                     <MetaStat label="CPU" value={`${meta.cpu_usage.toFixed(0)}%`} />
                   )}
